@@ -1,0 +1,67 @@
+networks:
+  myshelf_net:
+    name: myshelf_net
+    ipam:
+      config:
+        - subnet: 172.40.0.0/24
+
+# A chave Google Books é lida do ficheiro .env na mesma pasta do docker-compose.
+# Cria um ficheiro .env com: GOOGLE_BOOKS_KEY=AIzaSy...
+# Nunca comitar o .env para Git — adiciona ao .gitignore.
+
+services:
+  pocketbase:
+    image: ghcr.io/marialaranjo/myshelf-pocketbase:latest
+    container_name: myshelf_pb
+    restart: unless-stopped
+    volumes:
+      - pb_data:/pb/pb_data
+    networks:
+      myshelf_net:
+        ipv4_address: 172.40.0.2
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://172.40.0.2:8090/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  nginx:
+    image: ghcr.io/marialaranjo/myshelf-nginx:latest
+    container_name: myshelf_nginx
+    restart: unless-stopped
+    env_file:
+      - .env                          # GOOGLE_BOOKS_KEY lida daqui — nunca hardcoded
+    environment:
+      - GOOGLE_BOOKS_KEY=${GOOGLE_BOOKS_KEY}
+    depends_on:
+      pocketbase:
+        condition: service_healthy
+    networks:
+      myshelf_net:
+        ipv4_address: 172.40.0.3
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  biblioreads:
+    image: nesaku/biblioreads:latest
+    container_name: myshelf_biblioreads
+    restart: unless-stopped
+    environment:
+      - NEXT_TELEMETRY_DISABLED=1
+    networks:
+      myshelf_net:
+        ipv4_address: 172.40.0.4
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://172.40.0.4:3000"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  pb_data:
+    name: myshelf_pb_data

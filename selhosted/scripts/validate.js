@@ -1,0 +1,88 @@
+#!/usr/bin/env node
+/**
+ * validate.js
+ * Extrai e valida a sintaxe do JavaScript dentro do index.html
+ * 
+ * Uso: node scripts/validate.js
+ */
+
+const fs = require('fs');
+const path = require('path');
+const { execSync } = require('child_process');
+const os = require('os');
+
+const htmlPath = path.join(__dirname, '..', 'frontend', 'index.html');
+
+if (!fs.existsSync(htmlPath)) {
+  console.error('❌ index.html não encontrado');
+  process.exit(1);
+}
+
+const html = fs.readFileSync(htmlPath, 'utf8');
+
+// Extrair blocos <script> (excluindo CDN externos)
+const scriptBlocks = [];
+const regex = /<script(?![^>]*src=)>([\s\S]*?)<\/script>/gi;
+let match;
+while ((match = regex.exec(html)) !== null) {
+  scriptBlocks.push(match[1]);
+}
+
+if (scriptBlocks.length === 0) {
+  console.error('❌ Nenhum bloco <script> encontrado');
+  process.exit(1);
+}
+
+console.log(`📋 Encontrados ${scriptBlocks.length} bloco(s) de script`);
+
+// Validar cada bloco
+let allOk = true;
+scriptBlocks.forEach((js, i) => {
+  const tmpFile = path.join(os.tmpdir(), `bib_validate_${i}.js`);
+  fs.writeFileSync(tmpFile, js);
+  try {
+    execSync(`node --check "${tmpFile}"`, { stdio: 'pipe' });
+    console.log(`  ✓ Bloco ${i + 1} — sintaxe válida (${(js.length / 1024).toFixed(1)} KB)`);
+  } catch (err) {
+    console.error(`  ✗ Bloco ${i + 1} — ERRO:`);
+    console.error(err.stderr?.toString() || err.message);
+    allOk = false;
+  } finally {
+    fs.unlinkSync(tmpFile);
+  }
+});
+
+// Verificar IDs referenciados vs definidos
+console.log('\n📋 A verificar IDs...');
+const referencedIds = [...html.matchAll(/\$\('([^']+)'\)/g)].map(m => m[1]);
+const definedIds = [...html.matchAll(/id="([^"]+)"/g)].map(m => m[1]);
+const definedSet = new Set(definedIds);
+const missing = [...new Set(referencedIds)].filter(id => !definedSet.has(id));
+if (missing.length) {
+  console.warn(`  ⚠ IDs referenciados mas não definidos: ${missing.join(', ')}`);
+} else {
+  console.log('  ✓ Todos os IDs referenciados existem no HTML');
+}
+
+// Verificar divs balanceadas
+const opens = (html.match(/<div/g) || []).length;
+const closes = (html.match(/<\/div>/g) || []).length;
+if (opens !== closes) {
+  console.error(`  ✗ Divs desbalanceadas: ${opens} abertas, ${closes} fechadas`);
+  allOk = false;
+} else {
+  console.log(`  ✓ Divs balanceadas (${opens})`);
+}
+
+// Tamanho do ficheiro
+const size = (fs.statSync(htmlPath).size / 1024).toFixed(1);
+console.log(`\n📦 Tamanho: ${size} KB`);
+
+if (allOk) {
+  console.log('\n✅ Validação completa — sem erros\n');
+  process.exit(0);
+} else {
+  console.error('\n❌ Validação falhou\n');
+  process.exit(1);
+}
+

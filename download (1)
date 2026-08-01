@@ -1,0 +1,11 @@
+# Normalização de finais de linha
+# Scripts shell têm de ser LF, senão o contentor falha com "bad interpreter".
+*.sh            text eol=lf
+docker-entrypoint.sh text eol=lf
+ 
+# Ficheiros de configuração servidos/processados em Linux
+*.template      text eol=lf
+Dockerfile      text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+ 

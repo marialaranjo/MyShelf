@@ -1,0 +1,192 @@
+# Nginx — frontend estático + proxy reverso para PocketBase e PORBASE
+# Servido a partir da NAS Ugreen, exposto à internet via Cloudflare Tunnel.
+# Última revisão de segurança: 2026-06-25
+
+worker_processes auto;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+
+    # Logs reduzidos para SSD da NAS
+    access_log /var/log/nginx/access.log combined buffer=8k flush=5s;
+    error_log  /var/log/nginx/error.log warn;
+
+    sendfile        on;
+    tcp_nopush      on;
+    tcp_nodelay     on;
+    keepalive_timeout 65;
+
+    # Compressão
+    gzip              on;
+    gzip_vary         on;
+    gzip_min_length   1024;
+    gzip_types        text/plain text/css text/javascript application/javascript
+                      application/json application/xml image/svg+xml;
+
+    # Resolver DNS dinâmico para PORBASE (necessário em Docker)
+    resolver 127.0.0.11 8.8.8.8 valid=300s ipv6=off;
+    resolver_timeout 5s;
+
+    server {
+        listen      80 default_server;
+        server_name _;
+
+        root  /usr/share/nginx/html;
+        index index.html;
+
+        # ── CORS ────────────────────────────────────────────
+        # FIX SEGURANÇA: substituído wildcard (*) por origem específica.
+        # Access-Control-Allow-Credentials não funciona com wildcard — esta
+        # combinação é o único valor correcto para uma app autenticada.
+        add_header Access-Control-Allow-Origin      "https://myshelf.teudominio.com" always;
+        add_header Access-Control-Allow-Methods     "GET, POST, PATCH, DELETE, OPTIONS"   always;
+        add_header Access-Control-Allow-Headers     "Authorization, Content-Type"          always;
+        add_header Access-Control-Allow-Credentials "true"                                 always;
+
+        # ── Segurança básica ────────────────────────────────
+        add_header X-Content-Type-Options  "nosniff"                           always;
+        # FIX SEGURANÇA: SAMEORIGIN → DENY. A app não usa iframes próprios,
+        # por isso DENY é mais restritivo e correcto.
+        add_header X-Frame-Options         "DENY"                              always;
+        add_header X-XSS-Protection        "1; mode=block"                     always;
+        add_header Referrer-Policy         "strict-origin-when-cross-origin"   always;
+        add_header Permissions-Policy      "camera=(), microphone=(), geolocation=()" always;
+
+        # COOP: login usa redirect full-page (sem popup)
+        add_header Cross-Origin-Opener-Policy "same-origin" always;
+
+        # ── HSTS ────────────────────────────────────────────
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
+
+        # ── Content-Security-Policy ─────────────────────────
+        # NOTA (2026-07-02): 'unsafe-inline' repõe-se em script-src porque
+        # index.html ainda serve o JS todo num <script> inline (a migração
+        # para app.js como ficheiro externo nunca chegou a ser feita nesse
+        # ficheiro). Sem isto o CSP bloqueia TODO o JavaScript da página —
+        # era por isso que o botão "Entrar com Google" (e tudo o resto) parava.
+        # style-src mantém 'unsafe-inline' (inline styles usados pelo JS).
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://covers.openlibrary.org https://books.google.com https://books.googleusercontent.com https://i.gr-assets.com https://m.media-amazon.com https://rnod.bnportugal.gov.pt; connect-src 'self' https://openlibrary.org; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'; upgrade-insecure-requests" always;
+
+        # ── Preflight CORS (OPTIONS) ─────────────────────────
+        # FIX SEGURANÇA: resposta explícita a pedidos OPTIONS para que o
+        # browser aceite os headers CORS acima e não bloqueie os POSTs/PATCHs.
+        if ($request_method = OPTIONS) {
+            return 204;
+        }
+
+        # ── PORBASE proxy (sem CORS na origem) ──────────────
+        # SPA chama:  /api/porbase?id=9789720045839
+        # → reescreve para: https://urn.porbase.org/isbn/dc/xml?id=9789720045839
+        location = /api/porbase {
+            if ($arg_id = "") { return 400 '{"error":"missing id"}'; }
+
+            set $porbase_host "urn.porbase.org";
+
+            proxy_pass         https://$porbase_host/isbn/dc/xml?id=$arg_id;
+            proxy_ssl_server_name on;
+            proxy_set_header   Host $porbase_host;
+            proxy_set_header   User-Agent "MyShelf/1.0";
+            proxy_hide_header  Set-Cookie;
+
+            default_type application/xml;
+
+            proxy_connect_timeout 5s;
+            proxy_read_timeout    10s;
+        }
+
+        # ── BiblioReads proxy (Goodreads enrichment) ────────
+        # SPA chama:  /api/goodreads  ou /api/goodreads/api/book-scraper?...
+        # → reescreve para: biblioreads:3000/...
+        location ^~ /api/goodreads {
+            rewrite ^/api/goodreads/?(.*)$ /$1 break;
+            proxy_pass         http://biblioreads:3000;
+            proxy_http_version 1.1;
+            proxy_set_header   Host              $host;
+            proxy_set_header   X-Real-IP         $remote_addr;
+            proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+            proxy_set_header   X-Forwarded-Proto $scheme;
+            proxy_connect_timeout  5s;
+            proxy_read_timeout    15s;
+        }
+
+        # ── Google Books proxy (chave injectada server-side) ─
+        # SPA chama:  /api/google-books?q=isbn:9789720045839
+        # A chave vem de ${GOOGLE_BOOKS_KEY} (envsubst no arranque).
+        # NUNCA é exposta no frontend nem na imagem Docker.
+        location = /api/google-books {
+            if ($arg_q = "") { return 400 '{"error":"missing q"}'; }
+
+            set $gbooks_host "www.googleapis.com";
+
+            proxy_pass         https://$gbooks_host/books/v1/volumes?$args&key=${GOOGLE_BOOKS_KEY};
+            proxy_ssl_server_name on;
+            proxy_set_header   Host $gbooks_host;
+            proxy_set_header   User-Agent "MyShelf/1.0";
+            proxy_hide_header  Set-Cookie;
+
+            default_type application/json;
+
+            proxy_connect_timeout 5s;
+            proxy_read_timeout    10s;
+        }
+
+        # ── PocketBase proxy ────────────────────────────────
+        # Todas as rotas /api/ (exceto as anteriores) vão para o PocketBase.
+        # O controlo de acesso é feito pelas API Rules do PocketBase — ver
+        # documentação de segurança do projecto.
+        location /api/ {
+            proxy_pass         http://pocketbase:8090;
+            proxy_http_version 1.1;
+            proxy_set_header   Host              $host;
+            proxy_set_header   X-Real-IP         $remote_addr;
+            proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+            proxy_set_header   X-Forwarded-Proto $scheme;
+            proxy_set_header   Upgrade           $http_upgrade;
+            proxy_set_header   Connection        "upgrade";
+
+            client_max_body_size 50M;
+
+            proxy_connect_timeout 10s;
+            proxy_send_timeout    60s;
+            proxy_read_timeout    60s;
+        }
+
+        # ── Painel admin do PocketBase ──────────────────────
+        # Aceder em https://myshelf.teudominio.com/_/
+        # Recomendação: restringir acesso por IP na NAS ou via Cloudflare Access.
+        location /_/ {
+            proxy_pass         http://pocketbase:8090;
+            proxy_http_version 1.1;
+            proxy_set_header   Host              $host;
+            proxy_set_header   X-Real-IP         $remote_addr;
+            proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+            proxy_set_header   X-Forwarded-Proto $scheme;
+        }
+
+        # ── Frontend estático ────────────────────────────────
+        location / {
+            try_files $uri $uri/ /index.html;
+
+            location ~* \.(?:css|js)$ {
+                expires 7d;
+                add_header Cache-Control "public, max-age=604800";
+            }
+            location ~* \.(?:png|jpg|jpeg|gif|webp|svg|ico|woff2?)$ {
+                expires 30d;
+                add_header Cache-Control "public, max-age=2592000, immutable";
+            }
+        }
+
+        # Health check para o docker-compose / Cloudflare
+        location = /healthz {
+            access_log off;
+            return 200 "ok\n";
+            add_header Content-Type text/plain;
+        }
+    }
+}

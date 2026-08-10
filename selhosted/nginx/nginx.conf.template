@@ -55,7 +55,8 @@ http {
         add_header X-Frame-Options         "DENY"                              always;
         add_header X-XSS-Protection        "1; mode=block"                     always;
         add_header Referrer-Policy         "strict-origin-when-cross-origin"   always;
-        add_header Permissions-Policy      "camera=(), microphone=(), geolocation=()" always;
+        # camera=(self): scanner de código de barras por câmara do telemóvel.
+        add_header Permissions-Policy      "camera=(self), microphone=(), geolocation=()" always;
 
         # COOP: login usa redirect full-page (sem popup)
         add_header Cross-Origin-Opener-Policy "same-origin" always;
@@ -64,13 +65,11 @@ http {
         add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
 
         # ── Content-Security-Policy ─────────────────────────
-        # NOTA (2026-07-02): 'unsafe-inline' repõe-se em script-src porque
-        # index.html ainda serve o JS todo num <script> inline (a migração
-        # para app.js como ficheiro externo nunca chegou a ser feita nesse
-        # ficheiro). Sem isto o CSP bloqueia TODO o JavaScript da página —
-        # era por isso que o botão "Entrar com Google" (e tudo o resto) parava.
+        # O JS vive todo em app.js (ficheiro externo, sem handlers onclick/
+        # onsubmit/oninput inline — tudo via addEventListener + data-*), por
+        # isso script-src não precisa de 'unsafe-inline'.
         # style-src mantém 'unsafe-inline' (inline styles usados pelo JS).
-        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://covers.openlibrary.org https://books.google.com https://books.googleusercontent.com https://i.gr-assets.com https://m.media-amazon.com https://rnod.bnportugal.gov.pt; connect-src 'self' https://openlibrary.org; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'; upgrade-insecure-requests" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://covers.openlibrary.org https://books.google.com https://books.googleusercontent.com https://i.gr-assets.com https://m.media-amazon.com https://rnod.bnportugal.gov.pt; connect-src 'self' https://openlibrary.org; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'; upgrade-insecure-requests" always;
 
         # ── Preflight CORS (OPTIONS) ─────────────────────────
         # FIX SEGURANÇA: resposta explícita a pedidos OPTIONS para que o

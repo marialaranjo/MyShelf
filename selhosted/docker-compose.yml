@@ -16,6 +16,8 @@ services:
     restart: unless-stopped
     volumes:
       - pb_data:/pb/pb_data
+    #expose:
+    #  - "8090"
     networks:
       myshelf_net:
         ipv4_address: 172.40.0.2
@@ -37,6 +39,8 @@ services:
     depends_on:
       pocketbase:
         condition: service_healthy
+    #expose:
+    #  - "80"
     networks:
       myshelf_net:
         ipv4_address: 172.40.0.3
@@ -46,12 +50,32 @@ services:
       timeout: 5s
       retries: 3
 
+  # Opcional — cloudflared a correr directamente neste stack, em vez de num
+  # proxy reverso à parte. Só arranca com `docker compose --profile tunnel up -d`.
+  # Precisa de CLOUDFLARE_TUNNEL_TOKEN no .env (Cloudflare Dashboard → Zero
+  # Trust → Networks → Tunnels → o teu tunnel → Configure → token de
+  # instalação). Depois de activar, aponta o Public Hostname do tunnel para
+  # http://nginx:80 (nome do serviço, não IP).
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: myshelf_cloudflared
+    restart: unless-stopped
+    profiles: ["tunnel"]
+    command: tunnel run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      nginx:
+        condition: service_healthy
+    networks:
+      - myshelf_net
+
   biblioreads:
     image: nesaku/biblioreads:latest
     container_name: myshelf_biblioreads
     restart: unless-stopped
     environment:
       - NEXT_TELEMETRY_DISABLED=1
+    #expose:
+    #  - "3000"
     networks:
       myshelf_net:
         ipv4_address: 172.40.0.4

@@ -7,11 +7,29 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
 ## [Não lançado]
 
+### Adicionado (2ª ronda de sugestões)
+- **Ações em lote**: botão "Selecionar" na estante liga um modo de seleção múltipla (checkboxes nas capas) com barra de ações — mudar estado, mudar coleção ou apagar vários livros de uma vez
+- **Link público da coleção**: cada utilizador pode gerar (e revogar) um link `/c/<token>` que mostra a sua estante a quem o receber — só título, autor, capa, coleção e estado (nunca notas nem preço, restringidos já na resposta da API via `?fields=`). Nova migração `1700000060_add_shares.js` (coleção `shares`, privada, usada como "join" nas regras de `books`/`libraries` para autorizar o acesso público via token). **Por verificar após deploy**: confirmar no admin `/_/` que o link funciona e devolve só os campos esperados
+- **Modo offline real** (âmbito: livros): a app volta a abrir sem rede (service worker cacheia a app shell) e a estante mostra os últimos livros conhecidos (cache de leitura). Adicionar/editar/apagar livros sem rede fica numa fila local (marcados com ⏳ na capa) e sincroniza sozinho quando a rede volta. Coleções/wishlist/empréstimos continuam só com cache de leitura offline
+
+### Adicionado (sugestões novas)
+- **Scanner por câmara do telemóvel**: além do leitor USB/Bluetooth, agora há um botão "📷 Ler com a câmara" no formulário de adicionar por ISBN, usando a API nativa `BarcodeDetector` (sem lib externa — fica oculto em browsers sem suporte, ex. Safari/iOS). Precisou de abrir `camera=(self)` no header `Permissions-Policy`, que estava a bloquear qualquer acesso à câmara
+- **Deteção de duplicados por ISBN**: adicionar um livro cujo ISBN já está no catálogo já não cria um segundo registo — soma 1 ao campo `quantity` do existente (útil para registar 2ª/3ª cópia do mesmo livro)
+- **PWA instalável**: `manifest.json` + `icon.svg` + service worker mínimo (sem estratégia de cache, só para cumprir o critério de instalabilidade — a app já tem a sua própria lógica online/offline via PocketBase + `localStorage`)
+
+### Corrigido
+- **[CRÍTICO]** Livros e itens da wishlist não ficavam guardados no PocketBase: a migração `add_quantity` tornou `quantity` obrigatório em `books`, mas nenhum fluxo de adicionar enviava esse campo; o `create` falhava e caía, em silêncio, para o fallback local (`localStorage`) — a UI continuava a mostrar "✓ adicionado". `DB.addBook` passa agora a enviar `quantity:1` por omissão, e um novo `saveToast()` avisa quando a gravação cai para local em vez de mentir
+
+### Adicionado
+- `pb_migrations/1700000030_backfill_owner.js`: backfill do campo `owner` nos registos antigos, necessário para não ficarem invisíveis depois do `tighten_api_rules`
+
+### Concluído (estava em "Em desenvolvimento")
+- Handlers `onclick`/`onerror`/`onsubmit`/`oninput`/`onkeydown` inline migrados para `addEventListener()` (`data-action`/`data-onsubmit`/`data-oninput`/`data-enter`); todo o JS foi extraído para `frontend/app.js` externo — `'unsafe-inline'` removido do `script-src` da CSP
+- Botão de logout no cabeçalho da aplicação (`#top-reader`, visível após login)
+- Isolamento de dados por utilizador (`owner = @request.auth.id` em `books`/`libraries`/`wishlist`/`loans`) — falta apenas criar/autorizar a conta do segundo utilizador, fora do código
+
 ### Em desenvolvimento
-- Migração do Cloudflare Tunnel para container Docker directamente na NAS (a decidir)
-- Refactorização dos handlers `onclick`/`onerror` inline para `addEventListener()` — permitirá remover `'unsafe-inline'` do `script-src` da CSP
-- Botão de logout no cabeçalho da aplicação
-- Conta secundária para um segundo utilizador, com isolamento de dados por conta
+- Migração do Cloudflare Tunnel para container Docker directamente neste stack (opcional, ver `docker-compose.yml` — profile `tunnel`)
 
 ---
 

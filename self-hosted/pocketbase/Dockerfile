@@ -21,6 +21,8 @@ RUN mkdir -p /pb/pb_data /pb/pb_migrations /pb/pb_public
 
 # Migrações copiadas para dentro da imagem (aplicadas no arranque)
 COPY pb_migrations/ /pb/pb_migrations/
+# Regras de servidor (Fase 5): entrada só por convite
+COPY pb_hooks/ /pb/pb_hooks/
 
 WORKDIR /pb
 

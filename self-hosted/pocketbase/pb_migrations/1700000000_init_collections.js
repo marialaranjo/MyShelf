@@ -10,7 +10,7 @@
 //
 // 1. Campo `owner` é OPCIONAL (não required).
 //    Em testes locais sem OAuth, a SPA não envia owner.
-//    Na NAS com OAuth, quando preenchermos, fica registado.
+//    No servidor com OAuth, quando preenchermos, fica registado.
 //
 // 2. Regras API estão TODAS VAZIAS (qualquer um pode tudo).
 //    Adequado para testes locais. Antes de produção pública,

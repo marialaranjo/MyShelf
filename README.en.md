@@ -43,7 +43,11 @@ You can use just one, or both — they're not the same installation, but they sh
 | **Excel** | Export/import your collection as `.xlsx` |
 | **JSON backup** | Export/import data between devices |
 | **Languages** | Portuguese 🇵🇹 and English 🇬🇧 |
-| **Themes** | Light ☀️, Dark 🌙, Automatic |
+| **Themes** | Light ☀️, Dark 🌙, Automatic *(standalone)* |
+| **Bookcase** | Spines on shelves, height set by page count; sort by colour, height or author; cork-board view *(self-hosted)* |
+| **Summary** | Cover calendar (the book you read most each day), reading streak and yearly challenge *(self-hosted)* |
+| **Moods** | Cosy autumn, Night library (dark), Study and Rainy attic *(self-hosted)* |
+| **Invites and admin** | Invite-only sign-in and an Admin area to manage people and check services *(self-hosted)* |
 
 ---
 
@@ -65,11 +69,12 @@ myshelf/
 │
 └── self-hosted/                 ← full Docker version (PocketBase + Nginx)
     ├── docker-compose.yml
-    ├── .env.example
-    ├── frontend/                   index.html + styles.css
+    ├── docker-compose.local.yml    local test (see docs/testar-localmente.md)
+    ├── env.example
+    ├── frontend/                   index.html + app.js
     ├── nginx/                      reverse proxy, security headers, API proxies
-    ├── pocketbase/                 Dockerfile + migrations
-    └── scripts/validate.js
+    ├── pocketbase/                 Dockerfile + migrations + pb_hooks (invites)
+    └── scripts/                    validate.js, backfill-pages.mjs
 ```
 
 See [`docs/architecture.en.md`](docs/architecture.en.md) for technical decisions and [`docs/api-isbn.en.md`](docs/api-isbn.en.md) for the ISBN APIs used by both versions.
@@ -112,7 +117,7 @@ Internet
 │               │  • PORBASE proxy (/api/porbase)           │   │
 │               │  • BiblioReads proxy (/api/goodreads)     │   │
 │               │  • Injects GOOGLE_BOOKS_KEY via envsubst  │   │
-│               │  • Security headers (HSTS, CSP, CORS)     │   │
+│               │  • Security headers (HSTS, CSP)           │   │
 │               └──────────────────────────────────────────┘   │
 │                              │                                │
 │              ┌───────────────┼───────────────┐                │
@@ -139,7 +144,9 @@ This application went through a security audit (June 2026). The following measur
 
 **Access control (PocketBase API Rules)** — all collections (`books`, `libraries`, `wishlist`, `loans`) require authentication; writes and deletes are restricted to the record's owner (`owner = @request.auth.id`).
 
-**CORS** — `Access-Control-Allow-Origin` is fixed to your domain; no wildcard.
+**Invite-only sign-in** — only Google accounts with an invite (created in the Admin area) can sign in. On a fresh install, **the first Google sign-in becomes the admin**: do it right after deploying.
+
+**`/_/` panel** — PocketBase 0.22 does not rate-limit password attempts. Protect `/_/` **and** `/api/admins` with [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/applications/configure-apps/self-hosted-apps/) (or an IP allow-list). If you only use Google, also turn off email/password sign-in in **Collections → users → Options**.
 
 **Google Books API Key** — never exposed to the frontend; injected into Nginx via `envsubst` from `GOOGLE_BOOKS_KEY`.
 
@@ -153,7 +160,6 @@ This application went through a security audit (June 2026). The following measur
 | `Content-Security-Policy` | `default-src 'self'` + explicit origins per directive |
 | `X-Frame-Options` | `DENY` |
 | `X-Content-Type-Options` | `nosniff` |
-| `X-XSS-Protection` | `1; mode=block` |
 | `Referrer-Policy` | `strict-origin-when-cross-origin` |
 | `Cross-Origin-Opener-Policy` | `same-origin` |
 
@@ -171,7 +177,7 @@ This application went through a security audit (June 2026). The following measur
 ```bash
 git clone https://github.com/marialaranjo/myshelf.git
 cd myshelf/self-hosted
-cp .env.example .env
+cp env.example .env
 ```
 
 Edit `.env`:
@@ -190,6 +196,14 @@ docker compose logs nginx --tail=20
 
 The app becomes available at the domain configured in your Cloudflare Tunnel.
 
+#### First sign-in
+
+1. Set up Google sign-in (next section).
+2. **Sign in to the app with your Google account.** As there is no admin yet, this first account gets in without an invite and becomes the admin.
+3. From then on, invite other people in **account menu → Administração → Pessoas e convites**. Only invited accounts can sign in.
+
+> Want to test before updating your server? See [`docs/testar-localmente.md`](docs/testar-localmente.md) (in Portuguese).
+
 ### Setting up Google OAuth
 
 1. Create a project in [Google Cloud Console](https://console.cloud.google.com/)
@@ -205,7 +219,7 @@ The app becomes available at the domain configured in your Cloudflare Tunnel.
 
 1. In [Google Cloud Console](https://console.cloud.google.com/) → **APIs & Services → Credentials**, create/edit an API Key
 2. **API restrictions** → limit it to the **Books API** only
-3. **Application restrictions** → restrict by **HTTP referrers**: `myshelf.yourdomain.com/*`
+3. **Application restrictions** → **IP addresses** with your server's public IP, if it is fixed; otherwise leave it unrestricted. Do *not* use "HTTP referrers": the key is used by Nginx, which sends no referrer, so every search would fail.
 4. Put the key in `.env`
 
 > If an older key was ever exposed in source code or Git history, **revoke it and issue a new one**.
@@ -230,9 +244,10 @@ curl -X POST https://myshelf.yourdomain.com/api/collections/books/records \
   -H "Content-Type: application/json" -d '{"title":"test"}'
 # → Expected: 401 Unauthorized
 
-# CORS should not have a wildcard
-curl -I https://myshelf.yourdomain.com/api/collections/books/records
-# → Expected: Access-Control-Allow-Origin: https://myshelf.yourdomain.com
+# An account without an invite cannot register
+curl -X POST https://myshelf.yourdomain.com/api/collections/users/records \
+  -H "Content-Type: application/json" -d '{"email":"x@example.com","password":"Password12345","passwordConfirm":"Password12345"}'
+# → Expected: 403 "O registo só é possível com convite."
 
 # Security headers present
 curl -I https://myshelf.yourdomain.com

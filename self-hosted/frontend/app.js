@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// O MEU BIBLIOTECÁRIO — app.js
+// MYSHELF — app.js
 // Casca visual = "preview" (estante/cortiça/cartão de leitor).
 // Motor = repositório (PocketBase + OAuth, Goodreads/BiblioReads, lookupISBN
 // multi-fonte, sessões de leitura, scanner USB/BT, import/export).
@@ -9,6 +9,7 @@
 // Um único listener despacha cliques com base em data-action / data-id / data-arg.
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-action]');
+  if (!e.target.closest('.account-wrap') || (el && el.closest('.account-menu') && el.dataset.action!=='setAmbiente')) closeAccountMenu();
   if (!el) return;
   const a = el.dataset.action;
   const id = el.dataset.id;
@@ -72,8 +73,23 @@ document.addEventListener('click', e => {
     case 'setNav': return setNav(el, arg);
     case 'toggleBt': return toggleBt(el);
     case 'toggleTheme': return toggleTheme(el);
+    case 'toggleAccountMenu': return toggleAccountMenu();
+    case 'setCatalogView': return setCatalogView(arg);
+    case 'setShelfSort': return setShelfSort(arg);
+    case 'setAmbiente': return setAmbiente(arg);
     // Argumento (sem elemento)
     case 'setLoanTab': return setLoanTab(arg);
+    case 'calPrev': return calMove(-1);
+    case 'calNext': return calMove(1);
+    case 'editGoal': return editGoal();
+    case 'saveGoal': return saveGoal();
+    case 'openAdmin': return openAdmin();
+    case 'gotoWishImport': return gotoWishImport();
+    case 'adminSec': return setAdminSec(arg);
+    case 'toggleInvite': return toggleInvite(el.dataset.id);
+    case 'removeInvite': return removeInvite(el.dataset.id);
+    case 'checkDone': return checkDone(arg);
+    case 'runHealth': return runHealth();
     case 'updateReadingPages': return updateReadingPages(+arg);
     // Dois IDs
     case 'reopenLoan': return reopenLoan(id, id2);
@@ -94,6 +110,8 @@ document.addEventListener('submit', e => {
     case 'saveEdit': return saveEdit(e, id);
     case 'confirmLend': return confirmLend(e, id);
     case 'confirmEnrich': return confirmEnrich(e, id);
+    case 'saveGoal': e.preventDefault(); return saveGoal();
+    case 'sendInvite': e.preventDefault(); return sendInvite();
   }
 });
 // Input (substitui oninput inline) — data-oninput no elemento.
@@ -264,7 +282,7 @@ async function syncOfflineOutbox(){
   offWrite(OFF_OUTBOX_KEY,remaining);
   offlineSyncing=false;
   if(synced){
-    showToast(synced===1?'1 livro sincronizado com o NAS':synced+' livros sincronizados com o NAS');
+    showToast(synced===1?'1 livro sincronizado com o servidor':synced+' livros sincronizados com o servidor');
     unsavedChanges=true; await loadAll(); if(currentView==='catalogo') buildShelves();
   }
 }
@@ -316,6 +334,12 @@ const DB={
     lastSaveRemote=false; return LOCAL.addBook(data);
   },
   async updateBook(id,d){
+    // Fase 4: regista a data de fim quando o livro passa a «lido» (sem apagar uma data já existente).
+    // Se a PocketBase ainda não tiver o campo (migração por aplicar), o campo é simplesmente ignorado.
+    if(d&&d.status==='lido'){
+      const cur=byId(id);
+      if(!cur||(cur.status!=='lido'&&!cur.finishedAt)) d=Object.assign({},d,{finishedAt:new Date().toISOString()});
+    }
     if(isTempId(id)){
       // Ainda não existe no servidor: atualiza a própria operação 'add' pendente.
       const o=offRead(OFF_OUTBOX_KEY).map(op=>(op.type==='add'&&op.tempId===id)?Object.assign({},op,{data:Object.assign({},op.data,d)}):op);
@@ -502,7 +526,7 @@ async function lookupISBN(raw){
     }
   }catch{}
   try{
-    const r2=await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}&key=AIzaSyDuFvlfl2_kl4OUuKFrgSDnUAM0XmXM6Wo`,{signal:ctrl.signal});
+    const r2=await fetch(`/api/google-books?q=isbn:${isbn}`,{signal:ctrl.signal});
     const d2=await r2.json();
     if(d2.totalItems>0){
       clearTimeout(tid); const v=d2.items[0].volumeInfo;
@@ -545,7 +569,7 @@ async function searchByText(q){
     return (d.docs||[]).map(doc=>({title:doc.title||'',author:(doc.author_name||[]).join(', '),isbn:doc.isbn?doc.isbn[0]:'',publisher:(doc.publisher||[])[0]||'',year:doc.first_publish_year?String(doc.first_publish_year):'',cover:doc.cover_i?`https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`:''}));
   }catch{
     try{
-      const r2=await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=8&key=AIzaSyDuFvlfl2_kl4OUuKFrgSDnUAM0XmXM6Wo`);
+      const r2=await fetch(`/api/google-books?q=${encodeURIComponent(q)}&maxResults=8`);
       const d2=await r2.json();
       return (d2.items||[]).map(item=>{ const v=item.volumeInfo; return {title:v.title||'',author:(v.authors||[]).join(', '),isbn:v.industryIdentifiers?(v.industryIdentifiers[0]?.identifier||''):'',publisher:v.publisher||'',year:v.publishedDate?v.publishedDate.slice(0,4):'',cover:v.imageLinks?v.imageLinks.thumbnail.replace('http://','https://'):''} });
     }catch{}
@@ -576,7 +600,7 @@ function showToast(msg){
 
 // Toast usado depois de um addBook/addWish — avisa quando a gravação caiu
 // para o fallback local (usePocketBase=true não garante que o create passou).
-function saveToast(msg,merged){ if(merged) msg='Já tinhas este livro — quantidade aumentada'; showToast(lastSaveRemote?msg:msg+' ⚠️ só local (falhou no NAS)'); }
+function saveToast(msg,merged){ if(merged) msg='Já tinhas este livro — quantidade aumentada'; showToast(lastSaveRemote?msg:msg+' ⚠️ só local (falhou no servidor)'); }
 
 // ── MAPEAMENTO repo→preview ────────────────────────────────────────────────
 const COVER_COLORS=['navy','brown','terra','gold','burg','slate','moss','rust','plum','olive','teal','forest','steel','wine','indigo','rose','sage'];
@@ -716,10 +740,18 @@ function buildShelves(){
     filtered=all.filter(b=>b._shelf===activeFilter);
   }
 
-  // Cartaz ÚNICO em todos os casos (incluindo "Todos")
-  let html=`<div class="shelf-context">A ver &middot; <strong>${escHtml(title)}</strong> <span style="color:var(--text4)">· ${filtered.length} ${filtered.length===1?'livro':'livros'}</span>
-    <button type="button" class="bulk-toggle" data-action="toggleBulkMode">${bulkMode?'Cancelar seleção':'Selecionar'}</button></div>`;
-  html+=buildShelf(filtered,title,0,true);
+  filtered=sortBooks(filtered);
+  // Cabeçalho ÚNICO em todos os casos (incluindo "Todos")
+  let html=`<div class="shelf-context"><h2 class="shelf-title">${escHtml(title)} <span class="shelf-count">· ${filtered.length} ${filtered.length===1?'livro':'livros'}</span></h2>
+    <button type="button" class="bulk-toggle" data-action="toggleBulkMode">${bulkMode?'Cancelar seleção':'Selecionar'}</button>${catalogControls()}</div>`;
+  if(!filtered.length){
+    html+=`<div class="shelf-empty"><p class="shelf-empty-t">Esta prateleira ainda espera pelo primeiro livro.</p>
+      <p>${activeFilter||q?'Nenhum livro corresponde a este filtro ou pesquisa.':'Adiciona o primeiro em «Adicionar».'}</p></div>`;
+  } else if(catalogView==='estante'){
+    html+=buildBookcase(filtered);
+  } else {
+    html+=buildShelf(filtered,title,0,true);
+  }
   if(bulkMode) html+=bulkBarHtml();
 
   $('main').innerHTML='<h1 class="sr-only">A minha estante</h1>'+html;
@@ -727,6 +759,93 @@ function buildShelves(){
     el.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); el.click(); } });
   });
 }
+// ═══════════════════════════════════════════════════════════════════════════
+// ESTANTE (Fase 3) — lombadas em prateleiras, com decoração por ambiente.
+// A vista "Quadro" (cortiça, acima) continua disponível como alternativa.
+// ═══════════════════════════════════════════════════════════════════════════
+const lsGet=(k,d)=>{ try{ return localStorage.getItem(k)||d; }catch{ return d; } };
+const lsSet=(k,v)=>{ try{ localStorage.setItem(k,v); }catch{} };
+let catalogView = lsGet('catalogView','estante');   // 'estante' | 'quadro'
+let shelfSort   = lsGet('shelfSort','nenhuma');     // 'nenhuma' | 'cor' | 'altura' | 'autor'
+const COVER_HEX={navy:'#1c3358',sage:'#364f38',terra:'#7a3010',gold:'#6a4c10',burg:'#5a1522',slate:'#283848',moss:'#2e4a22',rust:'#6e2810',plum:'#401650',olive:'#3e4412',teal:'#143e46',brown:'#4a2e10',indigo:'#1e204a',rose:'#5e1828',forest:'#1a3a1a',wine:'#4a0e1c',steel:'#1e2a36'};
+function hexHue(hex){
+  const r=parseInt(hex.slice(1,3),16)/255,g=parseInt(hex.slice(3,5),16)/255,b=parseInt(hex.slice(5,7),16)/255;
+  const mx=Math.max(r,g,b),mn=Math.min(r,g,b),d=mx-mn; if(!d) return 0;
+  const h=mx===r?((g-b)/d)%6:mx===g?(b-r)/d+2:(r-g)/d+4; return (h*60+360)%360;
+}
+function sortBooks(list){
+  const surname=a=>(a||'').trim().split(/\s+/).pop()||'';
+  if(shelfSort==='cor')    return [...list].sort((x,y)=>hexHue(COVER_HEX[x.color]||'#000')-hexHue(COVER_HEX[y.color]||'#000'));
+  if(shelfSort==='altura') return [...list].sort((x,y)=>(y.pages||0)-(x.pages||0));
+  if(shelfSort==='autor')  return [...list].sort((x,y)=>surname(x.author).localeCompare(surname(y.author),'pt'));
+  return list;
+}
+function setCatalogView(v){ catalogView=(v==='quadro')?'quadro':'estante'; lsSet('catalogView',catalogView); buildShelves(); }
+function setShelfSort(v){ shelfSort=['cor','altura','autor'].includes(v)?v:'nenhuma'; lsSet('shelfSort',shelfSort); buildShelves(); }
+function shelfStatusLabel(b){ return b._shelf==='a-ler'?'A ler':b._shelf==='lido'?'Lido':'Para ler'; }
+function shelfAria(b){
+  return `${b.title||'Sem título'}, ${b.author||'autor desconhecido'} — ${shelfStatusLabel(b)}`
+    +(b.quantity>1?`, ${b.quantity} exemplares`:'')+(b.lent?', emprestado':'')+(b._pending?', por sincronizar':'');
+}
+function spineHtml(b){
+  const p=Math.min((b.pages||300)/1000,1);                     // sem nº de páginas → altura média
+  const h=Math.round(176+p*68), w=Math.round(48+p*28);
+  const sel=bulkMode&&bulkSelected.has(b.id);
+  const act=bulkMode?'toggleBulkSelect':'openModal';
+  const pip=b._shelf==='a-ler'?'pip-lendo':b._shelf==='lido'?'pip-lido':'pip-para';
+  return `<div class="slot"><button type="button" class="spine c-${b.color||'navy'}${sel?' is-selected':''}" style="--h:${h};--w:${w}"
+      data-action="${act}" data-id="${b.id}" ${bulkMode?`aria-pressed="${sel}"`:''} aria-label="${escAttr(shelfAria(b))}" title="${escAttr((b.title||'')+' — '+(b.author||''))}">
+    ${b._shelf==='a-ler'?'<span class="spine-ribbon" aria-hidden="true"></span>':''}
+    <span class="spine-band" aria-hidden="true"></span>
+    <span class="spine-lbl" aria-hidden="true"><span>${escHtml(b.title||'Sem título')}</span></span>
+    <span class="spine-pip ${pip}" aria-hidden="true"></span>
+    ${b.quantity>1?`<span class="spine-badge spine-qty" aria-hidden="true">×${b.quantity}</span>`:''}
+    ${b._pending?'<span class="spine-badge spine-pending" aria-hidden="true">⏳</span>':''}
+    ${b.lent?'<span class="spine-lent" aria-hidden="true"></span>':''}
+    ${sel?'<span class="spine-check" aria-hidden="true">✓</span>':''}
+  </button></div>`;
+}
+function faceoutHtml(b){
+  const act=bulkMode?'toggleBulkSelect':'openModal';
+  const sel=bulkMode&&bulkSelected.has(b.id);
+  return `<div class="slot"><button type="button" class="faceout${sel?' is-selected':''}" data-action="${act}" data-id="${b.id}"
+      ${bulkMode?`aria-pressed="${sel}"`:''} aria-label="${escAttr(shelfAria(b))}" title="${escAttr((b.title||'')+' — '+(b.author||''))}">
+    ${coverFace(b)}${b._pending?'<span class="spine-badge spine-pending" aria-hidden="true">⏳</span>':''}${sel?'<span class="spine-check" aria-hidden="true">✓</span>':''}
+  </button></div>`;
+}
+const SHELF_DECOR=[
+  `<svg class="deco" width="58" height="96" viewBox="0 0 58 96" aria-hidden="true"><path d="M29 60C20 40 6 38 4 22c10 2 20 12 25 30 3-22 10-40 24-48 0 18-10 34-22 52 6-12 16-18 26-18-4 12-14 18-28 22z" fill="#4f7a4a"/><path d="M12 60h34l-5 34H17z" fill="#b5653a"/><path d="M10 58h38v6H10z" fill="#9a5230"/></svg>`,
+  `<svg class="deco" width="40" height="92" viewBox="0 0 40 92" aria-hidden="true"><ellipse cx="20" cy="18" rx="10" ry="16" fill="#ffcf73" opacity=".35"/><path d="M20 6c4 6 5 10 0 16-5-6-4-10 0-16z" fill="#ffb84d"/><rect x="11" y="24" width="18" height="60" rx="2" fill="#f4ead6"/><rect x="5" y="84" width="30" height="6" rx="2" fill="#a07a3a"/></svg>`,
+  `<svg class="deco" width="74" height="78" viewBox="0 0 74 78" aria-hidden="true"><path d="M14 78c-8 0-10-10-4-16 2-14 8-24 18-28l-2-14 8 8h10l8-8-2 14c6 4 10 12 10 22 0 8-4 14-10 16 8-2 14 2 14 6H14z" fill="#2b221c"/><circle cx="36" cy="34" r="2" fill="#e8c35a"/><circle cx="46" cy="34" r="2" fill="#e8c35a"/></svg>`,
+  `<svg class="deco" width="30" height="86" viewBox="0 0 30 86" aria-hidden="true"><path d="M2 86V30C2 12 28 12 28 30v56z" fill="#a8843f"/><path d="M6 86V34c0-12 18-12 18 0v52z" fill="#c9a24f"/></svg>`,
+  `<svg class="deco" width="96" height="66" viewBox="0 0 96 66" aria-hidden="true"><rect x="4" y="44" width="88" height="20" rx="2" fill="#6b3030"/><rect x="10" y="26" width="76" height="18" rx="2" fill="#2f4f5e"/><rect x="2" y="10" width="84" height="16" rx="2" fill="#94591f"/><rect x="12" y="49" width="40" height="9" fill="#f6efdc"/><rect x="18" y="30" width="34" height="9" fill="#f6efdc"/><rect x="8" y="14" width="38" height="8" fill="#f6efdc"/></svg>`,
+];
+function buildBookcase(books){
+  let html='',di=0;
+  books.forEach((b,i)=>{
+    if(i>0&&i%7===0){ html+=`<div class="slot slot-decor">${SHELF_DECOR[di%SHELF_DECOR.length]}</div>`; di++; }
+    html+=(shelfSort==='nenhuma'&&!bulkMode&&i%9===4)?faceoutHtml(b):spineHtml(b);
+  });
+  html+=`<div class="slot slot-decor">${SHELF_DECOR[(di+1)%SHELF_DECOR.length]}</div>`;
+  const lights=Array.from({length:18},(_,i)=>`<span style="left:${3+i*5.4}%;top:${12+Math.sin(i/17*Math.PI)*6}px;animation-delay:${(i%5)*.6}s"></span>`).join('');
+  return `<div class="room"><div class="room-lights" aria-hidden="true">${lights}</div>
+    <div class="bookcase"><div class="shelf-row">${html}</div></div>
+    <div class="room-floor" aria-hidden="true"></div></div>`;
+}
+function catalogControls(){
+  const seg=(items,cur,act)=>items.map(([v,l])=>`<button type="button" aria-pressed="${v===cur}" data-action="${act}" data-arg="${v}">${l}</button>`).join('');
+  // No telemóvel ficam recolhidos atrás de «Ordenar e vista» (no computador estão sempre abertos)
+  const wide=window.matchMedia&&matchMedia('(min-width:701px)').matches;
+  const resumo=`${catalogView==='estante'?'Estante':'Quadro'} · ${{nenhuma:'Sem ordem',cor:'Cor',altura:'Altura',autor:'Autor'}[shelfSort]}`;
+  return `<details class="cat-more" ${wide||catMoreOpen?'open':''}>
+    <summary>Ordenar e vista <span class="cat-more-now">${resumo}</span></summary>
+    <div class="cat-controls">
+    <div class="cat-group" role="group" aria-label="Vista"><span class="cat-label">Vista</span><div class="cat-seg">${seg([['estante','Estante'],['quadro','Quadro']],catalogView,'setCatalogView')}</div></div>
+    <div class="cat-group" role="group" aria-label="Ordenar"><span class="cat-label">Ordenar</span><div class="cat-seg">${seg([['nenhuma','Sem ordem'],['cor','Cor'],['altura','Altura'],['autor','Autor']],shelfSort,'setShelfSort')}</div></div>
+  </div></details>`;
+}
+let catMoreOpen=false;   // lembra se ficou aberto no telemóvel enquanto se muda a ordem
+document.addEventListener('toggle',e=>{ if(e.target.classList&&e.target.classList.contains('cat-more')) catMoreOpen=e.target.open; },true);
 function bulkBarHtml(){
   const n=bulkSelected.size;
   const libOpts=STATE.libs.map(l=>`<option value="${l.id}">${escHtml((l.icon?l.icon+' ':'')+l.name)}</option>`).join('');
@@ -772,6 +891,12 @@ async function applyBulkDelete(){
   showToast('Livros apagados');
 }
 function setFilter(btn,status){
+  if(currentView!=='catalogo'){   // vindo das Coleções («Ver na estante»)
+    document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+    const cat=document.querySelector('.nav-btn'); if(cat) cat.classList.add('active');
+    currentView='catalogo'; const fb=document.querySelector('.filter-bar'); if(fb) fb.style.display='';
+    window.scrollTo({top:0});
+  }
   activeFilter=status;
   renderFilterChips();
   buildShelves();
@@ -1098,6 +1223,119 @@ async function reopenLoan(loanId,bookId){
   loanTab='ativos'; unsavedChanges=true; await loadAll(); renderResumo(); showToast('Empréstimo reaberto');
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// RESUMO (Fase 4) — calendário de capas e desafio anual
+// O calendário lê as sessões do cronómetro (readingSessions). Em cada dia mostra
+// o livro com mais tempo de leitura. O desafio conta os livros com finishedAt
+// no ano corrente; a meta é users.readingGoal (ou localStorage sem PocketBase).
+// ═══════════════════════════════════════════════════════════════════════════
+const MESES_PT=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+let calOffset=0;            // 0 = mês atual, -1 = mês anterior…
+let goalEditing=false;
+function calMove(n){ calOffset=Math.min(0,calOffset+n); renderResumo(); }
+function localDayKey(iso){ const d=new Date(iso); if(isNaN(d)) return ''; return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; }
+function readingByDay(){
+  // { 'AAAA-M-D': { book, secs } } — fica o livro com mais tempo nesse dia
+  const map={};
+  STATE.books.forEach(b=>{
+    parseTags(b.readingSessions||'[]').filter(Boolean).forEach(sx=>{
+      const k=localDayKey(sx&&sx.date); if(!k) return;
+      const secs=parseInt(sx.duration||0)||0;
+      const acc=map[k]||(map[k]={best:null,bestSecs:-1,per:{}});
+      acc.per[b.id]=(acc.per[b.id]||0)+secs;
+      if(acc.per[b.id]>acc.bestSecs){ acc.best=b; acc.bestSecs=acc.per[b.id]; }
+    });
+  });
+  return map;
+}
+function readingStreak(map){
+  let n=0; const d=new Date();
+  if(!map[localDayKey(d.toISOString())]) d.setDate(d.getDate()-1);   // hoje ainda pode vir a ler
+  while(map[localDayKey(d.toISOString())]){ n++; d.setDate(d.getDate()-1); }
+  return n;
+}
+function readingTimeOfDay(){
+  const c={manhã:0,tarde:0,noite:0}; let tot=0;
+  STATE.books.forEach(b=>parseTags(b.readingSessions||'[]').filter(Boolean).forEach(sx=>{
+    const d=new Date(sx&&sx.date); if(isNaN(d)) return; const h=d.getHours();
+    c[h>=6&&h<13?'manhã':h>=13&&h<19?'tarde':'noite']++; tot++;
+  }));
+  if(tot<5) return '';
+  const [k]=Object.entries(c).sort((a,b)=>b[1]-a[1])[0];
+  return {manhã:'Lês sobretudo de manhã',tarde:'Lês sobretudo à tarde',noite:'Lês sobretudo à noite'}[k];
+}
+function getGoal(){
+  const u=AUTH.user; const g=u&&parseInt(u.readingGoal||0);
+  if(g) return g;
+  try{ return parseInt(localStorage.getItem('readingGoal')||0)||0; }catch{ return 0; }
+}
+function editGoal(){ goalEditing=true; renderResumo(); setTimeout(()=>$('goal-input')?.focus(),0); }
+async function saveGoal(){
+  const v=Math.max(0,Math.min(1000,parseInt($('goal-input')?.value||0)||0));
+  try{ localStorage.setItem('readingGoal',String(v)); }catch{}
+  const u=AUTH.user;
+  if(usePocketBase&&u&&u.id){
+    try{
+      const r=await fetch(`${PB_URL}/api/collections/users/records/${u.id}`,{method:'PATCH',headers:{'Content-Type':'application/json',...AUTH.authHeader()},body:JSON.stringify({readingGoal:v}),signal:AbortSignal.timeout(8000)});
+      if(r.ok) AUTH.user=Object.assign({},u,{readingGoal:v});
+    }catch(_){ /* fica guardado neste browser; tenta de novo na próxima vez */ }
+  }
+  goalEditing=false; renderResumo(); showToast(v?`Meta de ${v} livros guardada`:'Meta removida');
+}
+function calendarNoteHtml(map){
+  const now=new Date(); const ref=new Date(now.getFullYear(),now.getMonth()+calOffset,1);
+  const y=ref.getFullYear(), m=ref.getMonth(), days=new Date(y,m+1,0).getDate(), lead=(ref.getDay()+6)%7;
+  const DOW=['Segunda','Terça','Quarta','Quinta','Sexta','Sábado','Domingo'];
+  let cells=DOW.map(d=>`<div class="cal-dow" aria-hidden="true">${d.charAt(0)}</div>`).join('')+Array.from({length:lead},()=>'<div class="cal-blank" aria-hidden="true"></div>').join('');
+  let lidos=0;
+  for(let d=1;d<=days;d++){
+    const k=`${y}-${m}-${d}`, hit=map[k], today=calOffset===0&&d===now.getDate();
+    if(hit&&hit.best){
+      lidos++; const b=hit.best;
+      const img=b.cover?`<img src="${escAttr(b.cover)}" alt="" loading="lazy">`:`<span class="cal-ini">${escHtml((b.title||'?').trim().charAt(0).toUpperCase())}</span>`;
+      cells+=`<div class="cal-day is-read c-${b.color||'navy'}${today?' is-today':''}" role="img" aria-label="${d} de ${MESES_PT[m]}: leste ${escAttr(b.title||'')}" title="${escAttr(b.title||'')}">${img}<span class="cal-n">${d}</span></div>`;
+    } else {
+      cells+=`<div class="cal-day${today?' is-today':''}" role="img" aria-label="${d} de ${MESES_PT[m]}: sem leitura registada"><span class="cal-n">${d}</span></div>`;
+    }
+  }
+  const mes=MESES_PT[m].charAt(0).toUpperCase()+MESES_PT[m].slice(1);
+  return `<div class="note note-cal">
+    <div class="cal-head"><div class="note-title">${mes} de ${y}</div>
+      <div class="cal-nav"><button type="button" class="cal-btn" data-action="calPrev" aria-label="Mês anterior">‹</button>
+      <button type="button" class="cal-btn" data-action="calNext" aria-label="Mês seguinte" ${calOffset===0?'disabled':''}>›</button></div></div>
+    <div class="cal-grid">${cells}</div>
+    <p class="cal-legend"><strong class="num">${lidos}</strong> ${lidos===1?'dia':'dias'} com leitura. Cada capa é o livro que mais leste nesse dia.</p>
+    ${Object.keys(map).length?'':'<p class="cal-legend">Usa o cronómetro de leitura na ficha de um livro e os dias começam a aparecer aqui.</p>'}
+  </div>`;
+}
+function goalNoteHtml(map){
+  const y=new Date().getFullYear(), goal=getGoal();
+  const doneBooks=STATE.books.filter(b=>b._shelf==='lido'&&b.finishedAt&&new Date(b.finishedAt).getFullYear()===y);
+  const semData=STATE.books.filter(b=>b._shelf==='lido'&&!b.finishedAt).length;
+  const done=doneBooks.length, streak=readingStreak(map), quando=readingTimeOfDay();
+  const thick=[...doneBooks].sort((a,b)=>(b.pages||0)-(a.pages||0))[0];
+  const editor=`<form class="goal-form" data-onsubmit="saveGoal">
+      <label for="goal-input">Quantos livros queres ler em ${y}?</label>
+      <div class="goal-row"><input id="goal-input" type="number" min="0" max="1000" inputmode="numeric" value="${goal||''}" placeholder="Ex.: 24">
+      <button type="button" class="goal-save" data-action="saveGoal">Guardar</button></div></form>`;
+  const slots=goal?Array.from({length:Math.min(goal,60)},(_,i)=>{
+      const b=doneBooks[i]; const h=60+((i*37)%35);
+      return b?`<i class="c-${b.color||'navy'}" style="height:${h}%"></i>`:`<i class="goal-empty" style="height:${h}%"></i>`;
+    }).join(''):'';
+  return `<div class="note note-goal"><div class="note-title">Desafio ${y}</div>
+    ${goal&&!goalEditing?`<p class="goal-num"><span class="nm-num">${done}</span> de ${goal} livros
+        <button type="button" class="goal-edit" data-action="editGoal">Mudar meta</button></p>
+      <div class="goal-shelf" role="img" aria-label="${done} de ${goal} livros lidos em ${y}">${slots}</div>`
+      :(goalEditing||!goal?editor:'')}
+    ${!goal&&!goalEditing?'':''}
+    <ul class="goal-facts">
+      ${goal?'':`<li>Já terminaste <strong class="num">${done}</strong> ${done===1?'livro':'livros'} em ${y}.</li>`}
+      ${thick?`<li>O mais grosso: <strong>${escHtml(thick.title||'')}</strong>, <span class="num">${thick.pages}</span> páginas</li>`:''}
+      ${streak?`<li>Sequência atual: <strong class="num">${streak} ${streak===1?'dia':'dias'}</strong> seguidos a ler</li>`:''}
+      ${quando?`<li>${quando}</li>`:''}
+      ${semData?`<li class="goal-note">${semData} ${semData===1?'livro lido não tem':'livros lidos não têm'} data de fim (terminados antes desta versão) e não ${semData===1?'conta':'contam'} para o desafio.</li>`:''}
+    </ul></div>`;
+}
 function renderResumo(){
   currentView='stats';
   const B=STATE.books;
@@ -1113,7 +1351,8 @@ function renderResumo(){
   const dist=[0,0,0,0,0]; rated.forEach(b=>dist[5-b.rating]++);
   const maxBar=Math.max(lidos,aLer,paraLer,1), maxRt=Math.max(1,...dist);
   const bars=[['Lidos',lidos,'bar-lido'],['A ler',aLer,'bar-lendo'],['Para ler',paraLer,'bar-para']];
-  const statsNotes=`
+  const dayMap=readingByDay();
+  const statsNotes=calendarNoteHtml(dayMap)+goalNoteHtml(dayMap)+`
     <div class="note"><div class="note-k">Resumo</div>
       <div class="note-metrics">
         <div><div class="nm-num">${lidos}</div><div class="nm-cap">Lidos</div></div>
@@ -1144,11 +1383,11 @@ function renderResumo(){
   $('main').innerHTML=`
     <section class="board-view">
       <div class="board-head"><div class="board-kicker">A minha leitura</div><h1 class="board-title">Resumo</h1>
-        <p class="board-sub">Estatísticas da estante e livros que estão neste momento fora de casa.</p></div>
+        <p class="board-sub">Um retrato da tua leitura, mês a mês, e dos livros que andam fora de casa.</p></div>
       <div class="split-board">
         <div class="split-col"><div class="split-col-head"><div class="split-col-title">Estatísticas</div><div class="split-col-count">${total} livros</div></div>
           <div class="board"><div class="pin-board">${statsNotes}</div></div></div>
-        <div class="split-col"><div class="split-col-head"><div class="split-col-title">Emprestados</div><div class="split-col-count">${shown.length} ${shown.length===1?'livro':'livros'}</div></div>
+        <div class="split-col"><div class="split-col-head"><div class="split-col-title">Fora de casa</div><div class="split-col-count">${shown.length} ${shown.length===1?'livro':'livros'}</div></div>
           ${loansBlock}</div>
       </div></section>`;
 }
@@ -1194,25 +1433,35 @@ function renderCollections(){
   currentView='colecoes';
   const notes=STATE.libs.map(lib=>{
     const books=STATE.books.filter(b=>b.library===lib.id);
+    const lidos=books.filter(b=>b._shelf==='lido').length, aLer=books.filter(b=>b._shelf==='a-ler').length;
+    // mini-prateleira: altura e largura pelas páginas, como na estante grande
     const spines=books.length
-      ? books.slice(0,9).map(b=>`<div class="col-spine c-${b.color}" style="height:${40+(String(b.id).length*7)%34}px"></div>`).join('')
-      : `<div class="col-empty">Ainda sem livros</div>`;
-    return `<div class="note" style="width:258px">
-      <button class="note-del" data-action="deleteCollection" data-id="${lib.id}" aria-label="Apagar localização" title="Apagar">&times;</button>
-      <div class="col-spines">${spines}</div>
+      ? books.slice(0,14).map(b=>{ const p=Math.min((b.pages||300)/1000,1); return `<i class="c-${b.color||'navy'}" style="height:${Math.round(52+p*44)}%;width:${Math.round(11+p*9)}px"></i>`; }).join('')
+      : '';
+    return `<div class="note note-col">
+      <div class="col-shelf" aria-hidden="true">${spines||'<span class="col-shelf-empty">prateleira vazia</span>'}</div>
       <div class="note-title" style="margin-bottom:3px">${escHtml((lib.icon?lib.icon+' ':'')+lib.name)}</div>
-      <div class="col-desc">Localização</div>
-      <div class="col-count">${books.length} ${books.length===1?'livro':'livros'}</div>
+      ${lib.desc?`<div class="col-desc">${escHtml(lib.desc)}</div>`:''}
+      <div class="col-count"><strong class="num">${books.length}</strong> ${books.length===1?'livro':'livros'}${books.length?` · <span class="num">${lidos}</span> ${lidos===1?'lido':'lidos'}${aLer?` · <span class="num">${aLer}</span> a ler`:''}`:''}</div>
+      <div class="col-actions">
+        <button type="button" class="col-link" data-action="setFilter" data-arg="col:${lib.id}" data-goto="catalogo">Ver na estante</button>
+        <button type="button" class="col-link col-del" data-action="deleteCollection" data-id="${lib.id}">Apagar</button>
+      </div>
     </div>`;
-  }).join('')+`<div class="note note-new" style="width:258px">
-      <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      <input id="new-col" class="new-col-input" type="text" placeholder="Nome da localização" data-enter="createCollection">
+  }).join('')+`<div class="note note-new note-col">
+      <label for="new-col" class="note-title" style="margin-bottom:8px">Nova coleção</label>
+      <input id="new-col" class="new-col-input" type="text" placeholder="Ex.: Casa de férias" data-enter="createCollection">
       <button type="button" class="new-col-btn" data-action="createCollection">Criar</button>
     </div>`;
-  $('main').innerHTML=boardWrap('A minha biblioteca','Coleções &amp; Localizações',
-    'Coleção e localização são a mesma coisa — cria, apaga e arruma os livros por sítio (Consultório, NOVA FCSH, Casa…).',notes);
+  $('main').innerHTML=boardWrap('As tuas bibliotecas','Coleções',
+    'Cada sítio onde guardas livros tem a sua prateleira. Coleção e localização são a mesma coisa.',notes);
 }
-async function deleteCollection(libId){ await DB.deleteLib(libId); unsavedChanges=true; await loadAll(); renderCollections(); }
+async function deleteCollection(libId){
+  const lib=STATE.libs.find(l=>l.id===libId); const n=STATE.books.filter(b=>b.library===libId).length;
+  const msg=n?`Apagar «${lib?lib.name:'esta coleção'}»? Os ${n} ${n===1?'livro continua':'livros continuam'} na estante, mas ${n===1?'fica':'ficam'} sem coleção.`:`Apagar «${lib?lib.name:'esta coleção'}»?`;
+  if(!confirm(msg)) return;
+  await DB.deleteLib(libId); unsavedChanges=true; await loadAll(); renderCollections(); showToast('Coleção apagada');
+}
 async function createCollection(){
   const el=$('new-col'); const v=(el&&el.value||'').trim();
   if(!v){ if(el) el.focus(); return; }
@@ -1224,20 +1473,20 @@ async function createCollection(){
 // ═══════════════════════════════════════════════════════════════════════════
 function renderWishlist(){
   currentView='wishlist';
-  const tabs=[{id:'desejado',label:'Desejados'},{id:'comprado',label:'Comprados'},{id:'adicionado',label:'Adicionados'}];
+  const tabs=[{id:'desejado',label:'Desejados'},{id:'comprado',label:'Comprados'},{id:'adicionado',label:'Já na estante'}];
   const counts=tabs.reduce((m,t)=>{ m[t.id]=STATE.wish.filter(w=>(w.status||'desejado')===t.id).length; return m; },{});
   const subnav=`<div class="wish-subnav"><div class="seg" role="tablist">${
     tabs.map(t=>`<button role="tab" aria-selected="${wishTab===t.id}" data-action="setWishTab" data-id="${t.id}">${t.label}<span class="num">${counts[t.id]}</span></button>`).join('')
   }</div></div>`;
   const filtered=STATE.wish.filter(w=>(w.status||'desejado')===wishTab);
-  const stateMeta={ desejado:{next:'comprado',nextLabel:'Marcar como comprado'}, comprado:{next:'adicionado',nextLabel:'Adicionar à biblioteca'}, adicionado:{next:null,nextLabel:null} };
+  const stateMeta={ desejado:{next:'comprado',nextLabel:'Marcar como comprado'}, comprado:{next:'adicionado',nextLabel:'Arrumar na estante'}, adicionado:{next:null,nextLabel:null} };
   const cards=filtered.map(w=>{
     const color=colorFor(w);
     const m=stateMeta[wishTab];
     const advance=m.next
       ? `<button class="wish-advance" type="button" data-action="advanceWish" data-id="${w.id}">${m.nextLabel}</button>`
-      : `<div class="wish-done">Já está na biblioteca ✓</div>`;
-    const prio=wishTab==='desejado'&&w.priority?`<span class="prio prio-${w.priority}">${escHtml(w.priority)}</span>`:'';
+      : `<div class="wish-done">Já está na estante ✓</div>`;
+    const prio=wishTab==='desejado'&&w.priority?`<span class="prio prio-${w.priority}">Prioridade ${({alta:'alta',media:'média',baixa:'baixa'})[w.priority]||escHtml(w.priority)}</span>`:'';
     const link=w.url?`<a class="wish-store" href="${escAttr(w.url)}" target="_blank" rel="noopener noreferrer">Ver na livraria ↗</a>`:'';
     return `<div class="note note-wish" style="width:222px">
       ${prio}
@@ -1246,10 +1495,11 @@ function renderWishlist(){
       <div class="wish-author">${escHtml(w.author||'')}</div>
       <div class="wish-foot">${link}</div>
       ${advance}
-      <button class="note-del" data-action="deleteWish" data-id="${w.id}" aria-label="Apagar" title="Apagar">&times;</button>
+      <button type="button" class="col-link col-del wish-del" data-action="deleteWish" data-id="${w.id}" aria-label="Apagar ${escAttr(w.title||'este desejo')}">Apagar</button>
     </div>`;
   }).join('');
-  const body=filtered.length?cards:'<div class="wish-empty">Nada por aqui ainda.</div>';
+  const emptyTxt={ desejado:['Que livro andas a namorar?','Afixa-o aqui, para não te esqueceres dele.'], comprado:['Ainda nada a caminho.','Quando comprares um desejo, aparece aqui até chegar a casa.'], adicionado:['Ainda nenhum desejo chegou à estante.','Os livros que arrumares a partir da wishlist ficam registados aqui.'] }[wishTab];
+  const body=filtered.length?cards:`<div class="note wish-empty-note"><div class="note-title">${emptyTxt[0]}</div><p>${emptyTxt[1]}</p>${wishTab==='desejado'?'<button type="button" class="wish-advance" data-action="toggleWishForm">Adicionar desejo</button>':''}</div>`;
   const subs={ desejado:'Os próximos candidatos a entrar na estante.', comprado:'Já comprados, à espera de chegar à biblioteca.', adicionado:'Já entraram para a estante.' };
   const prioOpts=[['','Sem prioridade'],['alta','Alta'],['media','Média'],['baixa','Baixa']].map(([v,l])=>`<option value="${v}">${l}</option>`).join('');
   const addForm=`<div class="wish-add-form hidden" id="wish-add-form">
@@ -1269,14 +1519,25 @@ function renderWishlist(){
   $('main').innerHTML=`<section class="board-view">
     <div class="board-head">
       <div class="wish-head-row"><div><div class="board-kicker">Para um dia destes</div><h1 class="board-title">Wishlist</h1></div>
-        <button type="button" class="wish-add-toggle" data-action="toggleWishForm">+ Adicionar</button>
+        <div class="wish-head-actions"><button type="button" class="col-link" data-action="toggleWishImport">Colar uma lista</button>
+        <button type="button" class="wish-add-toggle" data-action="toggleWishForm">+ Adicionar</button></div>
       </div>
       <p class="board-sub">${subs[wishTab]}</p>
     </div>
     ${addForm}
+    <div class="wish-import-wrap" id="wish-import-wrap">
+      <label class="scan-label" for="wish-import-text">Cola um título por linha (opcionalmente «Título — Autor»)</label>
+      <textarea id="wish-import-text" class="wish-import-area" rows="6" placeholder="A Metamorfose — Franz Kafka&#10;O Processo — Franz Kafka&#10;O Castelo"></textarea>
+      <div id="wish-import-status" class="isbn-status" role="status" aria-live="polite" style="margin-top:8px"></div>
+      <button type="button" id="wish-import-btn" class="scan-connect" style="border-radius:var(--radius);margin-top:10px;width:100%;justify-content:center" data-action="runWishImport">Importar para a wishlist</button>
+    </div>
     ${subnav}<div class="board"><div class="pin-board">${body}</div></div></section>`;
 }
 function setWishTab(tab){ wishTab=tab; renderWishlist(); }
+function gotoWishImport(){
+  const btn=Array.prototype.find.call(document.querySelectorAll('.nav-btn'),b=>/wishlist/i.test(b.textContent));
+  setNav(btn,'wishlist'); toggleWishImport();
+}
 async function advanceWish(id){
   const w=STATE.wish.find(x=>x.id===id); if(!w) return;
   const flow={desejado:'comprado',comprado:'adicionado'};
@@ -1287,7 +1548,11 @@ async function advanceWish(id){
   }
   await DB.updateWish(id,{status:next}); unsavedChanges=true; wishTab=next; await loadAll(); renderWishlist();
 }
-async function deleteWish(id){ await DB.deleteWish(id); unsavedChanges=true; await loadAll(); renderWishlist(); }
+async function deleteWish(id){
+  const w=STATE.wish.find(x=>x.id===id);
+  if(!confirm(`Apagar «${w&&w.title?w.title:'este desejo'}» da wishlist?`)) return;
+  await DB.deleteWish(id); unsavedChanges=true; await loadAll(); renderWishlist();
+}
 
 // ── Formulário de adicionar à wishlist ────────────────────────────────────
 function toggleWishForm(){
@@ -1367,6 +1632,7 @@ async function runWishImport(){
   st.className='isbn-status is-done';
   st.textContent=`Importação concluída: ${ok} adicionado(s)${fail?', '+fail+' erro(s)':''}.`;
   ta.value='';
+  if(currentView==='wishlist'){ renderWishlist(); showToast(`${ok} ${ok===1?'desejo afixado':'desejos afixados'} na wishlist${fail?` · ${fail} com erro`:''}`); }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1379,7 +1645,7 @@ function renderAdd(){
   currentView='adicionar';
   $('main').innerHTML=`
   <section class="scan-view">
-    <div class="view-head" style="margin-bottom:22px"><div class="view-kicker">Nova entrada</div><h1 class="view-title">Adicionar livro</h1></div>
+    <div class="view-head" style="margin-bottom:22px"><div class="view-kicker">Nova entrada</div><h1 class="view-title">Um livro novo para a estante</h1><p class="view-sub">Pelo código de barras, por pesquisa ou à mão.</p></div>
 
     <div class="scan-card">
       <div class="scan-card-head">
@@ -1462,31 +1728,13 @@ function renderAdd(){
             </div>
             <div class="efield"><label for="man-notes">Notas</label><textarea id="man-notes" rows="2" placeholder="Notas pessoais sobre este livro…"></textarea></div>
             <div id="man-status" class="isbn-status" role="status" aria-live="polite"></div>
-            <button type="button" class="scan-connect" style="border-radius:var(--radius);width:100%;justify-content:center" data-action="confirmManualAdd">Guardar na estante</button>
+            <button type="button" class="scan-connect" style="border-radius:var(--radius);width:100%;justify-content:center" data-action="confirmManualAdd">Arrumar na estante</button>
           </div>
         </div>
       </div>
     </div>
 
-    <div class="scan-card">
-      <div class="scan-card-head">
-        <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        Importar &amp; exportar
-      </div>
-      <div class="scan-card-body" style="display:flex;flex-wrap:wrap;gap:8px">
-        <button type="button" class="scan-connect" style="border-radius:var(--radius)" data-action="exportCSV">Exportar CSV</button>
-        <button type="button" class="scan-connect" style="border-radius:var(--radius)" data-action="openImport">Importar ISBNs / CSV</button>
-        <button type="button" class="scan-connect" style="border-radius:var(--radius)" data-action="toggleWishImport">Importar para wishlist</button>
-        <button type="button" class="scan-connect" style="border-radius:var(--radius)" data-action="saveJSON">Cópia de segurança</button>
-        <button type="button" class="scan-connect" style="border-radius:var(--radius)" data-action="loadJSON">Restaurar cópia</button>
-        <div class="wish-import-wrap" id="wish-import-wrap">
-          <label class="scan-label" style="margin-top:10px">Um título por linha (opcionalmente: Título — Autor)</label>
-          <textarea id="wish-import-text" class="wish-import-area" rows="6" placeholder="A Metamorfose — Franz Kafka&#10;O Processo — Franz Kafka&#10;O Castelo&#10;Dom Quixote — Cervantes"></textarea>
-          <div id="wish-import-status" class="isbn-status" role="status" aria-live="polite" style="margin-top:8px"></div>
-          <button type="button" id="wish-import-btn" class="scan-connect" style="border-radius:var(--radius);margin-top:10px;width:100%;justify-content:center" data-action="runWishImport">Importar para wishlist</button>
-        </div>
-      </div>
-    </div>
+    <p class="io-moved">Exportar, importar e cópias de segurança estão agora no menu da tua conta, no canto superior direito. Para colar uma lista de desejos, vai à <button type="button" class="col-link" data-action="gotoWishImport">Wishlist</button></p>
   </section>`;
 }
 function focusScan(){ const i=$('scan-input'); if(i){ i.focus(); const s=$('scan-usb-status'); if(s) s.textContent='Pronto para scan'; } }
@@ -1759,7 +2007,7 @@ async function stopReadingSession(save){
     const sessions=parseTags(b&&b.readingSessions||'[]').filter(Boolean);
     sessions.push({ date:new Date().toISOString(), duration:readingState.elapsed, pagesStart:readingState.pagesStart, pagesEnd:readingState.pagesCurrent });
     const upd={ pagesRead:readingState.pagesCurrent, pagesTotal:readingState.pagesTotal||(b&&b.pagesTotal)||0, readingSessions:JSON.stringify(sessions) };
-    if(readingState.pagesTotal&&readingState.pagesCurrent>=readingState.pagesTotal){ upd.status='lido'; showToast('Parabéns — livro marcado como lido!'); }
+    if(readingState.pagesTotal&&readingState.pagesCurrent>=readingState.pagesTotal){ upd.status='lido'; showToast('Livro terminado. Fica marcado como lido.'); }
     await DB.updateBook(readingState.bookId,upd); unsavedChanges=true; await loadAll();
   }
   Object.assign(readingState,{active:false,paused:false,bookId:null,elapsed:0});
@@ -1869,7 +2117,7 @@ function openImport(){
   openPanel(`
     <div class="edit-head">Importar livros</div>
     <label class="scan-label" for="batch-isbns">Um ISBN por linha</label>
-    <textarea id="batch-isbns" rows="6" placeholder="9789720040312&#10;9789722528237&#10;…" style="font-family:ui-monospace,monospace;font-size:.82rem;width:100%"></textarea>
+    <textarea id="batch-isbns" rows="6" placeholder="9789720040312&#10;9789722528237&#10;…" style="font-family:ui-monospace,monospace;font-size:.889rem;width:100%"></textarea>
     <label class="scan-label" for="batch-lib" style="margin-top:12px">Biblioteca de destino</label>
     <select id="batch-lib" style="width:100%">${libOpts||'<option value="">—</option>'}</select>
     <div id="batch-progress" style="display:none;margin-top:10px">
@@ -1901,9 +2149,159 @@ async function runImport(){
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// ADMINISTRAÇÃO (Fase 5) — só para quem está na coleção "admins".
+// Mesmo que alguém force esta vista, a PocketBase recusa: as regras das
+// coleções invites/users/admins é que protegem os dados, não o frontend.
+// Cópias de segurança e registos ficam no painel /_/ (precisam de superutilizador).
+// ═══════════════════════════════════════════════════════════════════════════
+let isAdmin=false, adminSec='geral';
+const ADMIN={ users:[], invites:[], admins:[], health:null, err:'' };
+async function checkAdmin(){
+  isAdmin=false;
+  if(usePocketBase&&AUTH.user&&AUTH.user.id){
+    try{ const d=await PB.req('GET',`admins/records?perPage=1&filter=${encodeURIComponent(`user="${AUTH.user.id}"`)}`); isAdmin=(d.items||[]).length>0; }catch(_){ isAdmin=false; }
+  } else if(!usePocketBase){
+    isAdmin=true;   // modo de demonstração: mostra a área com dados de exemplo
+  }
+  const it=$('am-admin'); if(it) it.hidden=!isAdmin;
+}
+function openAdmin(){
+  closeAccountMenu();
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  const fb=document.querySelector('.filter-bar'); if(fb) fb.style.display='none';
+  currentView='admin'; renderAdmin(); loadAdminData(); window.scrollTo({top:0});
+}
+function setAdminSec(s){ adminSec=s; renderAdmin(); }
+async function loadAdminData(){
+  ADMIN.err='';
+  if(!usePocketBase){
+    ADMIN.users=[{id:'u1',email:'leitora@exemplo.pt',name:'Leitora',created:'2026-06-16'},{id:'u2',email:'convidado1@exemplo.pt',name:'Convidado 1',created:'2026-07-02'}];
+    ADMIN.invites=[{id:'i1',email:'leitora@exemplo.pt',suspended:false},{id:'i2',email:'convidado1@exemplo.pt',suspended:false},{id:'i3',email:'convidado2@exemplo.pt',suspended:false,note:'Convite de 10/11'}];
+    ADMIN.admins=[{user:'u1'}];
+  } else {
+    try{
+      const [u,i,a]=await Promise.all([PB.getAll('users'),PB.getAll('invites'),PB.getAll('admins')]);
+      ADMIN.users=u; ADMIN.invites=i; ADMIN.admins=a;
+    }catch(e){ ADMIN.err='Não foi possível ler os utilizadores. A migração 1700000080 já foi aplicada no servidor?'; }
+  }
+  if(currentView==='admin') renderAdmin();
+  if(!ADMIN.health) runHealth();
+}
+async function runHealth(){
+  const probe=async(url)=>{ const t=performance.now();
+    try{ const r=await fetch(url,{signal:AbortSignal.timeout(8000)}); return {ok:r.ok,ms:Math.round(performance.now()-t),code:r.status}; }
+    catch(e){ return {ok:false,ms:Math.round(performance.now()-t),code:0}; } };
+  ADMIN.health={running:true}; if(currentView==='admin') renderAdmin();
+  if(!usePocketBase){ ADMIN.health={pb:{ok:true,ms:12},gb:{ok:true,ms:240},porbase:{ok:true,ms:610},gr:{ok:true,ms:4100}}; }
+  else {
+    const isbn='9789720046123';
+    const [pb,gb,porbase,gr]=await Promise.all([probe(`${PB_URL}/api/health`),probe(`/api/google-books?q=isbn:${isbn}`),probe(`/api/porbase?id=${isbn}`),probe('/api/goodreads/')]);
+    ADMIN.health={pb,gb,porbase,gr};
+  }
+  if(currentView==='admin') renderAdmin();
+}
+const ADMIN_CHECKS=[
+  {id:'gbkey', t:'Restringir a chave do Google Books', p:'Na Google Cloud, limita a chave à Books API (e, se puderes, ao IP do servidor). A chave fica só no .env (GOOGLE_BOOKS_KEY), nunca no código.'},
+  {id:'panel', t:'Proteger o painel /_/', p:'Põe o /_/ e o /api/admins atrás do Cloudflare Access (ou restringe por IP). O PocketBase 0.22 não limita tentativas de password.'},
+  {id:'pwauth',t:'Desligar o login por email e password', p:'No painel: Collections → users → Options. Se só usas Google, deixa apenas o OAuth2.'},
+  {id:'backup',t:'Fazer uma cópia de segurança', p:'No painel: Settings → Backups. Guarda uma cópia fora do servidor.'},
+  {id:'share', t:'Testar o link público da estante', p:'Abre o teu link /c/… numa janela privada e confirma que só mostra título, autor, capa, coleção e estado.'},
+];
+function checkDone(id){ try{ const k='adminCheck:'+id; localStorage.getItem(k)?localStorage.removeItem(k):localStorage.setItem(k,new Date().toISOString().slice(0,10)); }catch{} renderAdmin(); }
+function adminState(email){
+  const inv=ADMIN.invites.find(i=>(i.email||'').toLowerCase()===(email||'').toLowerCase());
+  return inv;
+}
+async function sendInvite(){
+  const inp=$('inv-email'); const email=(inp?.value||'').trim().toLowerCase();
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ showToast('Escreve um email válido'); inp?.focus(); return; }
+  if(ADMIN.invites.some(i=>(i.email||'').toLowerCase()===email)){ showToast('Esse email já tem convite'); return; }
+  if(usePocketBase){
+    try{ await PB.create('invites',{email,note:`Convite de ${AUTH.user?.name||AUTH.user?.email||'admin'}`}); }
+    catch(e){ showToast('Não foi possível criar o convite'); return; }
+    await loadAdminData();
+  } else { ADMIN.invites.push({id:'i'+Date.now(),email,suspended:false}); renderAdmin(); }
+  showToast(`Convite criado. ${email} já pode entrar com Google.`);
+}
+async function toggleInvite(id){
+  const inv=ADMIN.invites.find(i=>i.id===id); if(!inv) return;
+  const suspended=!inv.suspended;
+  if(suspended&&!confirm(`Suspender ${inv.email}? Deixa de conseguir entrar (a sessão atual termina quando expirar).`)) return;
+  if(usePocketBase){ try{ await PB.update('invites',id,{suspended}); }catch(e){ showToast('Não foi possível alterar'); return; } await loadAdminData(); }
+  else { inv.suspended=suspended; renderAdmin(); }
+  showToast(suspended?'Conta suspensa':'Conta reativada');
+}
+async function removeInvite(id){
+  const inv=ADMIN.invites.find(i=>i.id===id); if(!inv) return;
+  if(!confirm(`Retirar o convite de ${inv.email}?`)) return;
+  if(usePocketBase){ try{ await PB.remove('invites',id); }catch(e){ showToast('Não foi possível retirar'); return; } await loadAdminData(); }
+  else { ADMIN.invites=ADMIN.invites.filter(i=>i.id!==id); renderAdmin(); }
+  showToast('Convite retirado');
+}
+function renderAdmin(){
+  currentView='admin';
+  const pend=ADMIN_CHECKS.filter(c=>{ try{ return !localStorage.getItem('adminCheck:'+c.id); }catch{ return true; } }).length;
+  const secs=[['geral','Visão geral'],['pessoas','Pessoas e convites'],['verificacoes','Verificações']];
+  const nav=secs.map(([k,l])=>`<button type="button" class="adm-tab" data-action="adminSec" data-arg="${k}" ${adminSec===k?'aria-current="true"':''}>${l}${k==='verificacoes'&&pend?` <span class="adm-badge">${pend}</span>`:''}</button>`).join('');
+  const st=(o,okTxt)=>!o?'<span class="adm-wait">A verificar…</span>':o.ok?`<span class="adm-ok">${okTxt} · <span class="num">${o.ms}</span> ms</span>`:`<span class="adm-bad">Sem resposta${o.code?` (${o.code})`:''}</span>`;
+  let body='';
+  if(adminSec==='geral'){
+    const H=ADMIN.health||{};
+    const slow=H.gr&&H.gr.ok&&H.gr.ms>3000;
+    body=`<div class="adm-panel"><div class="adm-panel-head"><h2>Estado dos serviços</h2><button type="button" class="adm-link" data-action="runHealth">Verificar de novo</button></div>
+      <div class="adm-tiles">
+        <div class="adm-tile"><div class="adm-k">PocketBase</div>${st(H.pb,'A responder')}</div>
+        <div class="adm-tile"><div class="adm-k">Google Books</div>${st(H.gb,'A responder')}</div>
+        <div class="adm-tile"><div class="adm-k">PORBASE</div>${st(H.porbase,'A responder')}</div>
+        <div class="adm-tile"><div class="adm-k">Goodreads (BiblioReads)</div>${slow?`<span class="adm-warn">Lento · <span class="num">${H.gr.ms}</span> ms</span>`:st(H.gr,'A responder')}</div>
+      </div></div>
+      <div class="adm-panel"><h2>Resumo</h2><ul class="adm-facts">
+        <li><strong class="num">${ADMIN.users.length}</strong> ${ADMIN.users.length===1?'conta':'contas'} · <strong class="num">${ADMIN.invites.filter(i=>!i.suspended).length}</strong> convites ativos · <strong class="num">${ADMIN.invites.filter(i=>i.suspended).length}</strong> suspensos</li>
+        <li><strong class="num">${STATE.books.length}</strong> livros na tua estante · <strong class="num">${STATE.libs.length}</strong> coleções</li>
+        <li>Entrada: <strong>só por convite</strong>. Quem não tiver convite vê «Esta conta Google não foi convidada».</li>
+      </ul></div>
+      <div class="adm-panel"><h2>Painel do PocketBase</h2><p class="adm-hint">Cópias de segurança, registos e definições ficam no painel, com a conta de administrador do PocketBase.</p>
+        <a class="adm-btn" href="/_/" target="_blank" rel="noopener">Abrir o painel</a></div>`;
+  }
+  if(adminSec==='pessoas'){
+    const adminIds=new Set(ADMIN.admins.map(a=>a.user));
+    const rows=ADMIN.invites.slice().sort((a,b)=>(a.email||'').localeCompare(b.email||'')).map(i=>{
+      const u=ADMIN.users.find(x=>(x.email||'').toLowerCase()===(i.email||'').toLowerCase());
+      const adm=u&&adminIds.has(u.id);
+      const estado=adm?'<span class="adm-ok">Admin</span>':i.suspended?'<span class="adm-bad">Suspensa</span>':u?'<span class="adm-ok">Ativa</span>':'<span class="adm-warn">Convite por aceitar</span>';
+      const acoes=adm?'':`${u?'':`<button type="button" class="adm-link" data-action="removeInvite" data-id="${i.id}">Retirar convite</button>`}<button type="button" class="adm-link" data-action="toggleInvite" data-id="${i.id}">${i.suspended?'Reativar':'Suspender'}</button>`;
+      return `<tr><td><strong>${escHtml(u?.name||i.email.split('@')[0])}</strong><br><span class="adm-sub">${escHtml(i.email)}</span></td><td>${estado}</td><td class="num">${u?fmtDate(u.created):'—'}</td><td class="adm-actions">${acoes}</td></tr>`;
+    }).join('');
+    const orfas=ADMIN.users.filter(u=>!adminState(u.email)&&!adminIds.has(u.id));
+    body=`<div class="adm-panel"><h2>Pessoas</h2><p class="adm-hint">Cada pessoa só vê a sua própria estante. Suspender impede novas entradas.</p>
+      ${ADMIN.err?`<p class="adm-bad">${ADMIN.err}</p>`:''}
+      <div class="adm-table-wrap"><table class="adm-table"><thead><tr><th scope="col">Pessoa</th><th scope="col">Estado</th><th scope="col">Conta criada</th><th scope="col"><span class="sr-only">Ações</span></th></tr></thead><tbody>${rows||'<tr><td colspan="4">Ainda sem convites.</td></tr>'}</tbody></table></div>
+      ${orfas.length?`<p class="adm-warn" style="margin-top:12px">${orfas.length} ${orfas.length===1?'conta não tem':'contas não têm'} convite e não ${orfas.length===1?'consegue':'conseguem'} voltar a entrar: ${orfas.map(u=>escHtml(u.email)).join(', ')}.</p>`:''}
+      </div>
+      <div class="adm-panel"><h2>Convidar alguém</h2>
+        <form class="adm-form" data-onsubmit="sendInvite"><label for="inv-email">Email da conta Google</label>
+        <div class="adm-row"><input id="inv-email" type="email" required placeholder="nome@gmail.com" autocomplete="off"><button type="submit" class="adm-btn">Criar convite</button></div>
+        <p class="adm-hint">A pessoa entra neste site com esta conta Google. Não é enviado nenhum email: avisa-a tu.</p></form></div>`;
+  }
+  if(adminSec==='verificacoes'){
+    body=`<div class="adm-panel"><h2>Verificações</h2><p class="adm-hint">Coisas que ficaram por fazer. Marca-as quando estiverem feitas (fica guardado neste browser).</p>
+      <ul class="adm-checks">${ADMIN_CHECKS.map(c=>{ let done=''; try{ done=localStorage.getItem('adminCheck:'+c.id)||''; }catch{}
+        return `<li class="${done?'is-done':''}"><span class="${done?'adm-ok':'adm-warn'}">${done?'Feito':'Por fazer'}</span><div><strong>${c.t}</strong><p>${c.p}</p>${done?`<p class="adm-sub">Marcado a ${fmtDate(done)}</p>`:''}</div>
+        <button type="button" class="adm-link" data-action="checkDone" data-arg="${c.id}">${done?'Desmarcar':'Marcar como feito'}</button></li>`; }).join('')}</ul></div>`;
+  }
+  $('main').innerHTML=`<section class="adm"><div class="adm-head"><div class="board-kicker">Só tu vês esta área</div><h1 class="board-title">Administração</h1></div>
+    <nav class="adm-nav" aria-label="Secções da administração">${nav}</nav>${body}</section>`;
+}
+function showLoginNotice(msg){
+  showToast(msg);
+  const gate=document.querySelector('#login-gate .login-box');
+  if(gate&&!$('login-notice')){ const p=document.createElement('p'); p.id='login-notice'; p.className='login-notice'; p.setAttribute('role','alert'); p.textContent=msg; gate.appendChild(p); }
+  else if($('login-notice')) $('login-notice').textContent=msg;
+}
+// ═══════════════════════════════════════════════════════════════════════════
 // NAVEGAÇÃO
 // ═══════════════════════════════════════════════════════════════════════════
-const VIEWS={ catalogo:buildShelves, stats:renderResumo, adicionar:renderAdd, colecoes:renderCollections, wishlist:renderWishlist };
+const VIEWS={ catalogo:buildShelves, stats:renderResumo, adicionar:renderAdd, colecoes:renderCollections, wishlist:renderWishlist, admin:renderAdmin };
 function setNav(btn,view){
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
   if(btn) btn.classList.add('active');
@@ -1925,22 +2323,47 @@ function gotoALer(){
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TEMA ESCURO (persistente em localStorage)
+// AMBIENTES + TEMA (persistente em localStorage)
+// "noturna" é o tema escuro: também liga data-theme="dark", por isso as regras
+// escuras que já existiam continuam a funcionar. applyTheme/toggleTheme ficam
+// por compatibilidade (o valor antigo 'theme'='dark' passa a "noturna").
 // ═══════════════════════════════════════════════════════════════════════════
-const SUN_SVG='<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>';
-const MOON_SVG='<svg viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
-function applyTheme(theme,btn){
-  if(theme==='dark') document.documentElement.setAttribute('data-theme','dark');
-  else document.documentElement.removeAttribute('data-theme');
-  const b=btn||document.getElementById('theme-btn');
-  if(b){ const dark=theme==='dark'; b.setAttribute('aria-pressed',String(dark)); b.setAttribute('title',dark?'Tema claro':'Tema escuro'); b.innerHTML=dark?MOON_SVG:SUN_SVG; }
+const AMBIENTES=[
+  {id:'outono',  nome:'Outono acolhedor',  wall:'#efe2cc', wood:'#8a5a32'},
+  {id:'noturna', nome:'Biblioteca noturna',wall:'#1d2f2a', wood:'#3e2716'},
+  {id:'gabinete',nome:'Gabinete',          wall:'#dde3d2', wood:'#c9a678'},
+  {id:'chuva',   nome:'Sótão de chuva',    wall:'#cfd8e0', wood:'#7d7266'},
+];
+function setAmbiente(id){
+  if(!AMBIENTES.some(a=>a.id===id)) id='outono';
+  const root=document.documentElement;
+  root.setAttribute('data-ambiente',id);
+  if(id==='noturna') root.setAttribute('data-theme','dark'); else root.removeAttribute('data-theme');
+  try{ localStorage.setItem('ambiente',id); localStorage.removeItem('theme'); }catch{}
+  renderAmbienteGrid();
 }
-function toggleTheme(btn){
-  const isDark=document.documentElement.getAttribute('data-theme')==='dark';
-  const next=isDark?'':'dark';
-  applyTheme(next,btn);
-  try{ next?localStorage.setItem('theme',next):localStorage.removeItem('theme'); }catch{}
+function renderAmbienteGrid(){
+  const g=$('amb-grid'); if(!g) return;
+  const cur=document.documentElement.getAttribute('data-ambiente')||'outono';
+  g.innerHTML=AMBIENTES.map(a=>`<button type="button" class="amb" aria-pressed="${a.id===cur}" data-action="setAmbiente" data-arg="${a.id}">
+    <span class="sw" style="background:${a.wall};border-bottom:5px solid ${a.wood}" aria-hidden="true"><i style="height:20px;background:#7a3b2e"></i><i style="height:26px;background:#2f4f5e"></i><i style="height:18px;background:#9c6a22"></i><i style="height:24px;background:#3d5c40"></i></span>${a.nome}</button>`).join('');
 }
+function initAmbiente(){
+  let id='';
+  try{ id=localStorage.getItem('ambiente')||(localStorage.getItem('theme')==='dark'?'noturna':''); }catch{}
+  if(!id) id=(window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)?'noturna':'outono';
+  setAmbiente(id);
+}
+function applyTheme(theme){ setAmbiente(theme==='dark'?'noturna':'outono'); }
+function toggleTheme(){ setAmbiente(document.documentElement.getAttribute('data-ambiente')==='noturna'?'outono':'noturna'); }
+function toggleAccountMenu(force){
+  const m=$('account-menu'), b=$('top-reader'); if(!m||!b) return;
+  const open=force===undefined?m.hidden:force;
+  m.hidden=!open; b.setAttribute('aria-expanded',String(open));
+  if(open) renderAmbienteGrid();
+}
+function closeAccountMenu(){ const m=$('account-menu'); if(m&&!m.hidden) toggleAccountMenu(false); }
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeAccountMenu(); });
 
 // ═══════════════════════════════════════════════════════════════════════════
 // LOGIN — Google OAuth (PocketBase, PKCE) com fallback offline
@@ -1959,15 +2382,17 @@ function setReaderChip(name){
   const av=$('top-reader-av'), nm=$('top-reader-name'), chip=$('top-reader');
   const initial=(name||'M').trim().charAt(0).toUpperCase();
   if(av){ av.textContent=initial; av.style.background='var(--green-mid)'; }
-  if(nm) nm.textContent=name||'Leitora';
+  if(nm) nm.textContent=name||'Conta';
   if(chip) chip.hidden=false;
+  const lo=$('am-logout'), ls=$('am-logout-sep'); if(lo) lo.hidden=false; if(ls) ls.hidden=false;
+  checkAdmin();
 }
 // Entrada principal do gate (botão "Entrar com Google")
 async function doLogin(e){
   if(e&&e.preventDefault) e.preventDefault();
   if(AUTH_REQUIRED&&usePocketBase){ return startGoogleLogin(); }
   // modo offline / demonstração (file://): entra com perfil local
-  await enterApp('Maria');
+  await enterApp('Visitante');
 }
 async function startGoogleLogin(){
   try{
@@ -1980,10 +2405,7 @@ async function startGoogleLogin(){
     sessionStorage.setItem(AUTH.VERIFIER_KEY,google.codeVerifier);
     // Redirect full-page: o Google devolve o utilizador à raiz da SPA com ?code=.
     // A SPA detecta o code no boot e troca-o via PocketBase API.
-    // Dinâmico (origem da própria página) — funciona em qualquer domínio onde
-    // a app esteja hospedada, sem precisar de hardcode. TEM de corresponder
-    // exactamente ao Authorized redirect URI registado na Google Console.
-    const REDIRECT=window.location.origin+'/';
+    const REDIRECT=location.origin+'/';   // produção: o teu domínio · teste local: http://localhost:8080/
     const base=(google.authURL||google.authUrl||'').replace(/redirect_uri=[^&]*/,'redirect_uri='+encodeURIComponent(REDIRECT));
     location.href=base;
   }catch(err){ showToast('Erro a iniciar login: '+err.message); }
@@ -1997,12 +2419,18 @@ async function handleOAuthCallback(){
   if(!savedState||state!==savedState){ showToast('Falha de validação no login'); return false; }
   // Troca o code pelo token via endpoint real do PocketBase 0.22.
   // redirectUrl DEVE coincidir com o que foi enviado ao Google em startGoogleLogin().
-  const redirectUrl=window.location.origin+'/';
+  const redirectUrl=location.origin+'/';
   try{
     const r=await fetch(`${PB_URL}/api/collections/users/auth-with-oauth2`,{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({provider:'google',code,codeVerifier:verifier,redirectUrl})});
-    if(!r.ok) throw new Error('HTTP '+r.status);
+    if(!r.ok){
+      let msg='HTTP '+r.status;
+      try{ const j=await r.json(); if(j&&j.message) msg=j.message; }catch(_){}
+      history.replaceState({},'',location.pathname);
+      if(r.status===403){ showLoginNotice(msg); return false; }
+      throw new Error(msg);
+    }
     const data=await r.json();
     AUTH.token=data.token; AUTH.user=data.record;
     history.replaceState({},'',location.pathname);
@@ -2013,12 +2441,12 @@ function logout(){
   AUTH.clear();
   if(AUTH_REQUIRED){ location.reload(); return; }
   showLoginScreen();
-  const chip=$('top-reader'); if(chip) chip.hidden=true;
+  const lo=$('am-logout'), ls=$('am-logout-sep'); if(lo) lo.hidden=true; if(ls) ls.hidden=true;
 }
 
 function seedDefaultLibs(){
   if(STATE.libs.length) return;
-  ['Consultório','NOVA FCSH','Casa'].forEach(name=>LOCAL.addLib({name,icon:'📚',desc:''}));
+  ['Sala','Escritório','Quarto'].forEach(name=>LOCAL.addLib({name,icon:'📚',desc:''}));
 }
 
 // Dados de DEMONSTRAÇÃO — iguais ao preview. Só carregam em modo offline
@@ -2734,13 +3162,13 @@ const DEMO_SEED = {
  "libs": [
   {
    "id": "lib1",
-   "name": "Consultório",
+   "name": "Escritório",
    "icon": "📚",
    "desc": ""
   },
   {
    "id": "lib2",
-   "name": "NOVA FCSH",
+   "name": "Universidade",
    "icon": "📚",
    "desc": ""
   },
@@ -2843,7 +3271,7 @@ function seedDemoData(){
 // ── Entrar na app (depois de autenticado / offline) ────────────────────────
 async function enterApp(readerName){
   hideLoginScreen();
-  setReaderChip(readerName||(AUTH.user&&(AUTH.user.name||AUTH.user.email))||'Maria');
+  setReaderChip(readerName||(AUTH.user&&(AUTH.user.name||AUTH.user.email))||'Conta');
   await loadAll();
   if(!usePocketBase && !STATE.books.length){ seedDemoData(); await loadAll(); }
   else if(!STATE.libs.length){ seedDefaultLibs(); await loadAll(); }
@@ -2908,8 +3336,7 @@ async function renderPublicShare(token){
   if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
 
   // tema persistido
-  let savedTheme=''; try{ savedTheme=localStorage.getItem('theme')||''; }catch{}
-  applyTheme(savedTheme);
+  initAmbiente();
 
   await checkPB();
   verificarBiblioReads();   // não bloqueia

@@ -1,0 +1,69 @@
+# ════════════════════════════════════════════════════════════════════
+#  Teste local — "MyShelf" no teu computador, antes de ir para o servidor
+#
+#  Independente do docker-compose.yml de produção:
+#    - constrói as imagens a partir do código local (inclui migrações novas
+#      e alterações ao frontend que ainda não estão no GitHub/GHCR);
+#    - usa um volume próprio (myshelf_pb_data_local) — nunca toca nos
+#      dados de produção;
+#    - rede, nomes de containers e projeto próprios — pode correr ao lado
+#      da produção sem conflitos;
+#    - expõe a app em http://localhost:8080 e o painel em http://localhost:8090/_/
+#
+#  Uso (Windows — evita um erro do Docker Desktop com o "bake"):
+#    docker build -t myshelf-local-pocketbase ./pocketbase
+#    docker build -t myshelf-local-nginx -f nginx/Dockerfile .
+#    docker compose -f docker-compose.local.yml up -d
+#  Noutros sistemas basta: docker compose -f docker-compose.local.yml up -d --build
+#  Parar: docker compose -f docker-compose.local.yml down
+#  Apagar dados de teste: docker compose -f docker-compose.local.yml down -v
+#
+#  Guia passo a passo: docs/testar-localmente.md (na raiz do repositório)
+# ════════════════════════════════════════════════════════════════════
+
+name: myshelf-local
+
+services:
+  pocketbase:
+    image: myshelf-local-pocketbase
+    build:
+      context: ./pocketbase
+      dockerfile: Dockerfile
+    container_name: myshelf_local_pb
+    volumes:
+      - pb_data_local:/pb/pb_data
+    ports:
+      - "8090:8090"          # painel /_/ acessível diretamente no PC
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8090/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  nginx:
+    image: myshelf-local-nginx
+    build:
+      context: .
+      dockerfile: ./nginx/Dockerfile
+    container_name: myshelf_local_nginx
+    environment:
+      # O entrypoint recusa arrancar sem esta variável. Localmente usa um valor
+      # de substituição: a pesquisa no Google Books falha, o resto funciona.
+      # Para testar o Google Books: $env:GOOGLE_BOOKS_KEY="a-tua-chave" antes do up.
+      - GOOGLE_BOOKS_KEY=${GOOGLE_BOOKS_KEY:-sem-chave-no-teste-local}
+    depends_on:
+      pocketbase:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+
+  biblioreads:
+    image: nesaku/biblioreads:latest
+    container_name: myshelf_local_biblioreads
+    environment:
+      - NEXT_TELEMETRY_DISABLED=1
+
+volumes:
+  pb_data_local:
+    name: myshelf_pb_data_local

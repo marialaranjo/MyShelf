@@ -7,6 +7,28 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
 ## [Não lançado]
 
+### Self-hosted: redesign «estante + cortiça», convites e segurança
+- **Estante:** o Catálogo passa a mostrar lombadas em prateleiras (altura dada pelas páginas), com ordenação por cor, altura ou autor. A vista em quadro de cortiça continua disponível.
+- **Ambientes:** Outono acolhedor, Biblioteca noturna (escuro), Gabinete e Sótão de chuva, no menu da conta. Texto com 18px de base e 16px no mínimo.
+- **Resumo:** calendário de capas (a partir das sessões de leitura), sequência de dias e desafio anual. Novos campos `books.finishedAt` e `users.readingGoal` (migração `1700000070`).
+- **Convites e administração:** só entra com Google quem tiver convite (`pb_hooks/convites.pb.js` + migração `1700000080`). Área de Administração com serviços, pessoas e convites, e verificações.
+  - **Instalação nova:** enquanto não houver admin, o primeiro login com Google entra e fica como admin. Faz esse login logo a seguir ao deploy.
+  - **Atualização de uma instalação existente:** a migração dá convite a todas as contas que já existem e torna admin a conta mais antiga. Ninguém fica de fora.
+- **Coleções e Wishlist:** mini-prateleira por coleção, «Ver na estante», apagar com confirmação; Wishlist com «Já na estante» e «Colar uma lista».
+- **Telemóvel:** nenhuma vista desliza para o lado (medido em 320, 375 e 768 px); abas passam à linha seguinte; cartões de empréstimo adaptados.
+- **Teste local:** `self-hosted/docker-compose.local.yml` e guia em `docs/testar-localmente.md`.
+- `scripts/backfill-pages.mjs`: preenche o nº de páginas em falta a partir da Open Library (ensaio por omissão).
+
+### Segurança
+- **[CRÍTICO] A chave do Google Books estava escrita no `frontend/app.js` público** (pesquisa por ISBN e por título). Os pedidos passam agora pelo proxy `/api/google-books`, que injeta a chave no servidor. **Quem usou uma versão anterior deve revogar essa chave e criar uma nova.**
+- JS e CSS com `Cache-Control: no-cache` (com ETag), para um deploy nunca juntar HTML novo com JavaScript antigo. `server_tokens off`.
+- Removidos os cabeçalhos CORS (a app e a API estão no mesmo domínio; já não há nenhum domínio para editar no Nginx) e o `X-XSS-Protection` obsoleto.
+- README: a restrição «HTTP referrers» da chave do Google Books não funciona num proxy de servidor; passa a recomendar restrição por IP. Recomendação de proteger `/_/` e `/api/admins` com o Cloudflare Access.
+
+### Corrigido
+- A pasta `selhosted/` passa a `self-hosted/`, como o README e o GitHub Actions esperavam (o build das imagens falhava e as ligações do README estavam partidas).
+- README: `cp .env.example .env` corrigido para `cp env.example .env` (o nome real do ficheiro).
+
 ### Adicionado (2ª ronda de sugestões)
 - **Ações em lote**: botão "Selecionar" na estante liga um modo de seleção múltipla (checkboxes nas capas) com barra de ações — mudar estado, mudar coleção ou apagar vários livros de uma vez
 - **Link público da coleção**: cada utilizador pode gerar (e revogar) um link `/c/<token>` que mostra a sua estante a quem o receber — só título, autor, capa, coleção e estado (nunca notas nem preço, restringidos já na resposta da API via `?fields=`). Nova migração `1700000060_add_shares.js` (coleção `shares`, privada, usada como "join" nas regras de `books`/`libraries` para autorizar o acesso público via token). **Por verificar após deploy**: confirmar no admin `/_/` que o link funciona e devolve só os campos esperados

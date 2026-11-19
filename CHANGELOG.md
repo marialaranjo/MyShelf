@@ -7,6 +7,9 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
 ## [Não lançado]
 
+### Privacidade — fora dos motores de busca
+- `robots.txt` com `Disallow: /`, cabeçalho `X-Robots-Tag: noindex, nofollow` em todas as respostas (incluindo `/c/<token>`), `<meta name="robots">` e `<meta name="description">`. O MyShelf é uma biblioteca privada, por isso não deve aparecer no Google.
+
 ### Segurança — painel do PocketBase
 - Novo `self-hosted/pocketbase/pb_hooks/painel.pb.js`: **5 passwords erradas do mesmo IP → 15 min de bloqueio** (429); travão geral de 30 falhas em 15 min; lista de IPs opcional com `PB_ADMIN_ALLOW` (fora dela, `/_/` e `/api/admins` respondem 404). A Administração da app não é afetada.
 

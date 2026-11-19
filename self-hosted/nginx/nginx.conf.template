@@ -55,6 +55,11 @@ http {
         # COOP: login usa redirect full-page (sem popup)
         add_header Cross-Origin-Opener-Policy "same-origin" always;
 
+        # App privada (entrada por convite): nada deve aparecer em motores de busca,
+        # incluindo as estantes partilhadas em /c/<token>. O robots.txt diz aos
+        # robôs para não visitarem; este cabeçalho cobre os que o ignoram.
+        add_header X-Robots-Tag "noindex, nofollow" always;
+
         # ── HSTS ────────────────────────────────────────────
         add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
 

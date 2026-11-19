@@ -30,6 +30,8 @@ services:
       context: ./pocketbase
       dockerfile: Dockerfile
     container_name: myshelf_local_pb
+    environment:
+      - PB_ADMIN_ALLOW=${PB_ADMIN_ALLOW:-}
     volumes:
       - pb_data_local:/pb/pb_data
     ports:

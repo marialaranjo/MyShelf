@@ -7,6 +7,9 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
 ## [Não lançado]
 
+### Segurança — painel do PocketBase
+- Novo `self-hosted/pocketbase/pb_hooks/painel.pb.js`: **5 passwords erradas do mesmo IP → 15 min de bloqueio** (429); travão geral de 30 falhas em 15 min; lista de IPs opcional com `PB_ADMIN_ALLOW` (fora dela, `/_/` e `/api/admins` respondem 404). A Administração da app não é afetada.
+
 ### Acessibilidade
 - **0 violações do axe-core** (WCAG 2.1 AA) nos 4 ambientes, em todas as vistas, na Administração e na ficha do livro (antes: 37). Terracota dos ambientes claros mais escuro (4,7:1), verdes de texto e `--text4` mais claros na Biblioteca noturna, número da aba ativa legível no escuro.
 - **A ficha do livro tem nome para leitores de ecrã** (o título do livro ou do formulário aberto).

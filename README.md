@@ -144,7 +144,7 @@ Esta aplicação foi sujeita a uma auditoria de segurança (Junho 2026). As segu
 
 **Entrada só por convite** — só entra com Google quem tiver um convite criado na Administração. Numa instalação nova, **o primeiro login com Google fica como admin**: faz esse login logo a seguir ao deploy.
 
-**Painel `/_/`** — o PocketBase 0.22 não limita tentativas de password. Protege `/_/` **e** `/api/admins` com o [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/applications/configure-apps/self-hosted-apps/) (ou restrição por IP). Desliga também o login por email e password em **Collections → users → Options** se só usas Google.
+**Painel `/_/`** — o PocketBase 0.22 não limita tentativas de password, por isso o MyShelf traz `pb_hooks/painel.pb.js`: **5 passwords erradas do mesmo IP bloqueiam esse IP durante 15 minutos**, e 30 falhas no total fecham o login do painel para todos durante 15 minutos. Opcionalmente, `PB_ADMIN_ALLOW` no `.env` limita o painel a alguns IPs (por exemplo `192.168.1.0/24`); para os outros, `/_/` e `/api/admins` não existem (404). Usa uma password longa e única. Para uma camada extra, podes pôr só `/_/` e `/api/admins` atrás do [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/applications/configure-apps/self-hosted-apps/) (não o domínio inteiro, senão a app deixa de abrir para quem não passa na regra). Desliga também o login por email e password em **Collections → users → Options** se só usas Google.
 
 **Google Books API Key** — nunca exposta no frontend; injectada no Nginx via `envsubst` a partir de `GOOGLE_BOOKS_KEY`.
 

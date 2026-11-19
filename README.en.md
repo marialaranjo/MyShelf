@@ -146,7 +146,7 @@ This application went through a security audit (June 2026). The following measur
 
 **Invite-only sign-in** — only Google accounts with an invite (created in the Admin area) can sign in. On a fresh install, **the first Google sign-in becomes the admin**: do it right after deploying.
 
-**`/_/` panel** — PocketBase 0.22 does not rate-limit password attempts. Protect `/_/` **and** `/api/admins` with [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/applications/configure-apps/self-hosted-apps/) (or an IP allow-list). If you only use Google, also turn off email/password sign-in in **Collections → users → Options**.
+**`/_/` panel** — PocketBase 0.22 does not rate-limit password attempts, so MyShelf ships `pb_hooks/painel.pb.js`: **5 wrong passwords from the same IP lock that IP out for 15 minutes**, and 30 failures in total close panel sign-in for everyone for 15 minutes. Optionally, `PB_ADMIN_ALLOW` in `.env` restricts the panel to some IPs (e.g. `192.168.1.0/24`); for everyone else, `/_/` and `/api/admins` return 404. Use a long, unique password. For an extra layer, put only `/_/` and `/api/admins` behind [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/applications/configure-apps/self-hosted-apps/) (not the whole domain, or the app stops loading for anyone who fails the rule). If you only use Google, also turn off email/password sign-in in **Collections → users → Options**.
 
 **Google Books API Key** — never exposed to the frontend; injected into Nginx via `envsubst` from `GOOGLE_BOOKS_KEY`.
 

@@ -7,6 +7,9 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
 ## [Não lançado]
 
+### Segurança — atalhos externos só com sessão
+- `/api/google-books`, `/api/porbase` e `/api/goodreads` só respondem a quem tem sessão (o Nginx confirma com o PocketBase via `pb_hooks/sessao.pb.js`); sem sessão → 401. Limite de 120 pedidos/min por IP (folga de 60). Ninguém de fora gasta a quota da tua chave do Google Books.
+
 ### Computador com zoom + títulos da PORBASE
 - Menu no topo a partir de 900 px (cabeçalho compacto entre 900 e 1199 px), para portáteis com zoom de 125–150% no Windows.
 - Conta sem nome no Google: mostra a parte antes do `@`.

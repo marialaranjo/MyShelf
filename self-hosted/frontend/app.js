@@ -396,6 +396,8 @@ const BIBLIOREADS_PROXY = (() => {
   if (h === 'localhost' || h === '127.0.0.1' || h === '') return 'http://localhost:3000';
   return '/api/goodreads';   // produção: Nginx encaminha para o BiblioReads
 })();
+// Os atalhos /api/google-books, /api/porbase e /api/goodreads só respondem a quem
+// tem sessão (o Nginx confirma com o PocketBase): todos os pedidos levam o token.
 let biblioReadsDisponivel = false;
 
 async function verificarBiblioReads(){
@@ -403,7 +405,7 @@ async function verificarBiblioReads(){
   try {
     const controller = new AbortController();
     setTimeout(()=>controller.abort(), 3000);
-    const r = await fetch(BIBLIOREADS_PROXY, { method:'HEAD', signal:controller.signal });
+    const r = await fetch(BIBLIOREADS_PROXY, { method:'HEAD', headers:AUTH.authHeader(), signal:controller.signal });
     biblioReadsDisponivel = r.ok || r.status === 405;
   } catch { biblioReadsDisponivel = false; }
 }
@@ -415,7 +417,7 @@ async function pesquisarGoodreadsPorISBN(query){
     setTimeout(()=>controller.abort(), 6000);
     const queryURL = `https://www.goodreads.com/search?q=${encodeURIComponent(query)}`;
     const resposta = await fetch(`${BIBLIOREADS_PROXY}/api/search/books`, {
-      method:'POST', headers:{ 'Content-Type':'application/json','Accept':'application/json' },
+      method:'POST', headers:{ 'Content-Type':'application/json','Accept':'application/json',...AUTH.authHeader() },
       body: JSON.stringify({ queryURL }), signal: controller.signal
     });
     if (!resposta.ok) return null;
@@ -434,7 +436,7 @@ async function enriquecerComGoodreads(goodreadsUrl){
   const timeoutId = setTimeout(()=>controller.abort(), 8000);
   try{
     const resposta = await fetch(`${BIBLIOREADS_PROXY}/api/book-scraper`,{
-      method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'},
+      method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json',...AUTH.authHeader()},
       body: JSON.stringify({queryURL: urlLimpo}), signal: controller.signal
     });
     clearTimeout(timeoutId);
@@ -526,7 +528,7 @@ async function lookupISBN(raw){
     }
   }catch{}
   try{
-    const r2=await fetch(`/api/google-books?q=isbn:${isbn}`,{signal:ctrl.signal});
+    const r2=await fetch(`/api/google-books?q=isbn:${isbn}`,{headers:AUTH.authHeader(),signal:ctrl.signal});
     const d2=await r2.json();
     if(d2.totalItems>0){
       clearTimeout(tid); const v=d2.items[0].volumeInfo;
@@ -544,7 +546,7 @@ async function lookupISBN(raw){
 }
 
 async function lookupPorbase(isbn,signal){
-  const res=await fetch(`/api/porbase?id=${isbn}`,{signal});
+  const res=await fetch(`/api/porbase?id=${isbn}`,{headers:AUTH.authHeader(),signal});
   if(!res.ok) return null;
   const xml=await res.text();
   if(!xml||/Registo inexistente/i.test(xml)) return null;
@@ -573,7 +575,7 @@ async function searchByText(q){
     return (d.docs||[]).map(doc=>({title:doc.title||'',author:(doc.author_name||[]).join(', '),isbn:doc.isbn?doc.isbn[0]:'',publisher:(doc.publisher||[])[0]||'',year:doc.first_publish_year?String(doc.first_publish_year):'',cover:doc.cover_i?`https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`:''}));
   }catch{
     try{
-      const r2=await fetch(`/api/google-books?q=${encodeURIComponent(q)}&maxResults=8`);
+      const r2=await fetch(`/api/google-books?q=${encodeURIComponent(q)}&maxResults=8`,{headers:AUTH.authHeader()});
       const d2=await r2.json();
       return (d2.items||[]).map(item=>{ const v=item.volumeInfo; return {title:v.title||'',author:(v.authors||[]).join(', '),isbn:v.industryIdentifiers?(v.industryIdentifiers[0]?.identifier||''):'',publisher:v.publisher||'',year:v.publishedDate?v.publishedDate.slice(0,4):'',cover:v.imageLinks?v.imageLinks.thumbnail.replace('http://','https://'):''} });
     }catch{}
@@ -2202,7 +2204,7 @@ async function loadAdminData(){
 }
 async function runHealth(){
   const probe=async(url)=>{ const t=performance.now();
-    try{ const r=await fetch(url,{signal:AbortSignal.timeout(8000)}); return {ok:r.ok,ms:Math.round(performance.now()-t),code:r.status}; }
+    try{ const r=await fetch(url,{headers:AUTH.authHeader(),signal:AbortSignal.timeout(8000)}); return {ok:r.ok,ms:Math.round(performance.now()-t),code:r.status}; }
     catch(e){ return {ok:false,ms:Math.round(performance.now()-t),code:0}; } };
   ADMIN.health={running:true}; if(currentView==='admin') renderAdmin();
   if(!usePocketBase){ ADMIN.health={pb:{ok:true,ms:12},gb:{ok:true,ms:240},porbase:{ok:true,ms:610},gr:{ok:true,ms:4100}}; }

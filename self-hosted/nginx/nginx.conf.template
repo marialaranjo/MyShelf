@@ -33,6 +33,19 @@ http {
     resolver 127.0.0.11 8.8.8.8 valid=300s ipv6=off;
     resolver_timeout 5s;
 
+    # ── Atalhos externos (Google Books, PORBASE, Goodreads) ──
+    # IP real de quem pede: atrás do Cloudflare Tunnel, o Nginx só vê o IP do
+    # cloudflared (rede interna do Docker); o Cloudflare põe o IP verdadeiro em
+    # CF-Connecting-IP. Só se confia nesse cabeçalho vindo de redes privadas.
+    real_ip_header    CF-Connecting-IP;
+    set_real_ip_from  10.0.0.0/8;
+    set_real_ip_from  172.16.0.0/12;
+    set_real_ip_from  192.168.0.0/16;
+    set_real_ip_from  127.0.0.1;
+    # Travão para ciclos descontrolados: 120 pedidos/min por IP, com folga de 60.
+    limit_req_zone    $binary_remote_addr zone=atalhos:10m rate=120r/m;
+    limit_req_status  429;
+
     server {
         listen      80 default_server;
         server_name _;
@@ -70,12 +83,25 @@ http {
         # style-src mantém 'unsafe-inline' (inline styles usados pelo JS).
         add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://covers.openlibrary.org https://books.google.com https://books.googleusercontent.com https://i.gr-assets.com https://m.media-amazon.com https://rnod.bnportugal.gov.pt; connect-src 'self' https://openlibrary.org; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'; upgrade-insecure-requests" always;
 
+        # ── Só com sessão: o Nginx pergunta ao PocketBase (pb_hooks/sessao.pb.js)
+        # antes de deixar passar um pedido para os atalhos externos.
+        location = /_sessao {
+            internal;
+            proxy_pass              http://pocketbase:8090/api/eu;
+            proxy_pass_request_body off;
+            proxy_set_header        Content-Length "";
+            proxy_set_header        Authorization $http_authorization;
+        }
+
         # ── PORBASE proxy (sem CORS na origem) ──────────────
         # SPA chama:  /api/porbase?id=9789720045839
         # → reescreve para: https://urn.porbase.org/isbn/dc/xml?id=9789720045839
         location = /api/porbase {
             if ($arg_id = "") { return 400 '{"error":"missing id"}'; }
 
+            auth_request       /_sessao;
+            limit_req          zone=atalhos burst=60 nodelay;
+            proxy_set_header   Authorization "";
             set $porbase_host "urn.porbase.org";
 
             proxy_pass         https://$porbase_host/isbn/dc/xml?id=$arg_id;
@@ -94,6 +120,9 @@ http {
         # SPA chama:  /api/goodreads  ou /api/goodreads/api/book-scraper?...
         # → reescreve para: biblioreads:3000/...
         location ^~ /api/goodreads {
+            auth_request       /_sessao;
+            limit_req          zone=atalhos burst=60 nodelay;
+            proxy_set_header   Authorization "";
             rewrite ^/api/goodreads/?(.*)$ /$1 break;
             proxy_pass         http://biblioreads:3000;
             proxy_http_version 1.1;
@@ -112,6 +141,9 @@ http {
         location = /api/google-books {
             if ($arg_q = "") { return 400 '{"error":"missing q"}'; }
 
+            auth_request       /_sessao;
+            limit_req          zone=atalhos burst=60 nodelay;
+            proxy_set_header   Authorization "";
             set $gbooks_host "www.googleapis.com";
 
             proxy_pass         https://$gbooks_host/books/v1/volumes?$args&key=${GOOGLE_BOOKS_KEY};

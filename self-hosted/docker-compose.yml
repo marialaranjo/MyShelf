@@ -14,6 +14,10 @@ services:
     image: ghcr.io/marialaranjo/myshelf-pocketbase:latest
     container_name: myshelf_pb
     restart: unless-stopped
+    environment:
+      # Opcional: IPs que podem abrir o painel /_/ (ver pb_hooks/painel.pb.js).
+      # Vazio = painel aberto a todos, mas sempre com bloqueio por tentativas falhadas.
+      - PB_ADMIN_ALLOW=${PB_ADMIN_ALLOW:-}
     volumes:
       - pb_data:/pb/pb_data
     #expose:

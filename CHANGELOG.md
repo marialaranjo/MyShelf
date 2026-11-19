@@ -7,6 +7,12 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
 ## [Não lançado]
 
+### Novo — editar desejos, prolongar empréstimos e aviso de atrasos
+- **Editar um desejo:** botão «Editar» em cada papel da Wishlist, com a ficha já preenchida (título, autor, ISBN, prioridade, link, notas).
+- **Prolongar um empréstimo:** botão «Prolongar» nos cartões de «Fora de casa» para escolher nova data de devolução (sugestão: +14 dias).
+- **Aviso de atraso:** o Resumo mostra no topo os livros com a data passada (título, pessoa, dias de atraso) e o botão «Resumo» do menu mostra o número.
+- Sem migrações: usa os campos que já existiam.
+
 ### Segurança — atalhos externos só com sessão
 - `/api/google-books`, `/api/porbase` e `/api/goodreads` só respondem a quem tem sessão (o Nginx confirma com o PocketBase via `pb_hooks/sessao.pb.js`); sem sessão → 401. Limite de 120 pedidos/min por IP (folga de 60). Ninguém de fora gasta a quota da tua chave do Google Books.
 

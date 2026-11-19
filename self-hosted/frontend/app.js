@@ -994,6 +994,15 @@ function openModal(id){
   document.body.style.overflow='hidden';
   const c=document.querySelector('#book-modal .modal-close-btn'); if(c) c.focus();
 }
+// A ficha tem sempre um nome para os leitores de ecrã: o primeiro título do
+// conteúdo (livro, editar, emprestar, sessão de leitura…), ou «Ficha do livro».
+function nameModal(){
+  const m=$('book-modal'); if(!m) return;
+  const h=m.querySelector('#modal-body h1, #modal-body h2, #modal-body h3, #modal-body .edit-head');
+  if(h){ if(!h.id) h.id='book-modal-title'; m.setAttribute('aria-labelledby',h.id); m.removeAttribute('aria-label'); }
+  else { m.removeAttribute('aria-labelledby'); m.setAttribute('aria-label','Ficha do livro'); }
+}
+if($('modal-body')) new MutationObserver(nameModal).observe($('modal-body'),{childList:true});
 function closeModal(){
   $('book-modal').classList.remove('open'); $('backdrop').classList.remove('open');
   document.body.style.overflow='';

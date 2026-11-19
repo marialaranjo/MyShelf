@@ -7,6 +7,10 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
 ## [Não lançado]
 
+### Acessibilidade
+- **0 violações do axe-core** (WCAG 2.1 AA) nos 4 ambientes, em todas as vistas, na Administração e na ficha do livro (antes: 37). Terracota dos ambientes claros mais escuro (4,7:1), verdes de texto e `--text4` mais claros na Biblioteca noturna, número da aba ativa legível no escuro.
+- **A ficha do livro tem nome para leitores de ecrã** (o título do livro ou do formulário aberto).
+
 ### Self-hosted: redesign «estante + cortiça», convites e segurança
 - **Estante:** o Catálogo passa a mostrar lombadas em prateleiras (altura dada pelas páginas), com ordenação por cor, altura ou autor. A vista em quadro de cortiça continua disponível.
 - **Ambientes:** Outono acolhedor, Biblioteca noturna (escuro), Gabinete e Sótão de chuva, no menu da conta. Texto com 18px de base e 16px no mínimo.

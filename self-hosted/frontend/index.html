@@ -18,7 +18,7 @@
   --border:#d4c9b8;--border-light:#e2d9cc;
   --text:#1e1510;--text2:#4a3828;--text3:#7a6250;--text4:#735c45;
   --green:#3d5c40;--green-mid:#4a6b4d;--green-bg:#e4ede4;
-  --orange-mid:#b85e28;--orange-bg:#f5e8dc;
+  --orange-mid:#a3501f;--orange-bg:#f5e8dc;
   --red-mid:#a84030;--gold:#8a6a20;
   --radius-sm:8px;--radius:14px;--radius-lg:22px;--radius-xl:32px;
   --shadow:0 4px 16px rgba(80,50,20,.08),0 1px 4px rgba(80,50,20,.04);
@@ -47,7 +47,7 @@
   --text:#1e1510;--text2:#4a3828;--text3:#7a6250;--text4:#735c45;
   --surface2:#f0e9e0;--surface3:#e8ddd2;--border-light:#e2d9cc;
   --green:#3d5c40;--green-mid:#4a6b4d;--green-bg:#e4ede4;
-  --orange-mid:#b85e28;--orange-bg:#f5e8dc;--red-mid:#a84030;--gold:#8a6a20;
+  --orange-mid:#a3501f;--orange-bg:#f5e8dc;--red-mid:#a84030;--gold:#8a6a20;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html{background:var(--bg);min-height:100%;font-size:18px}
@@ -990,7 +990,7 @@ textarea:focus-visible,
   --wall:#efe2cc;--wood:#8a5a32;--wood-hi:#a87444;--wood-lo:#5e3a1c;--glow:rgba(255,200,120,.55);--focus:#2f5f9e}
 :root[data-ambiente="noturna"]{
   --wall:#1d2f2a;--wood:#3e2716;--wood-hi:#5a3a20;--wood-lo:#24160b;--glow:rgba(255,190,100,.75);--focus:#ffd27a;
-  --bg:#16191a;--bg-alt:#1b2020;--surface:#1f2423;--surface2:#283030;--surface3:#2f3837;--border:#3a4543;--border-light:#2f3837}
+  --bg:#16191a;--bg-alt:#1b2020;--surface:#1f2423;--surface2:#283030;--surface3:#2f3837;--border:#3a4543;--border-light:#2f3837;--text4:#b3a28c}
 :root[data-ambiente="gabinete"]{
   --wall:#dde3d2;--wood:#c9a678;--wood-hi:#dcbd91;--wood-lo:#9c7c50;--glow:transparent;
   --bg:#eef0e8;--bg-alt:#e5e9dd;--bg-deep:#d6dccb;--surface:#f8f9f4;--surface2:#e9ece2;--surface3:#dfe4d6;--border:#c9cfbd;--border-light:#dbe0d1;
@@ -1161,6 +1161,11 @@ textarea:focus-visible,
 .adm-bad{color:#8a2e22}.adm-bad::before{background:#b23a2c}
 .adm-wait{color:var(--text3);font-weight:500}
 :root[data-ambiente="noturna"] .adm-tab[aria-current="true"],:root[data-ambiente="noturna"] .adm-btn{color:#14110d}
+/* Noturna: os verdes usados como texto ficam claros (antes 2,1–3,3:1; agora ≥ 7,8:1) */
+:root[data-ambiente="noturna"] :is(.brand-name em,.col-link,.adm-link,.reading-cta):not(.note *){color:#9cd2a0}
+:root[data-ambiente="noturna"] .reading-cta:hover{color:#fff}
+/* Abas no escuro: a aba ativa é clara, por isso o número fica escuro */
+:root[data-theme="dark"] :is(.wish-subnav,.loan-subnav) .seg button[aria-selected=true] .num{background:rgba(0,0,0,.12);color:var(--surface)}
 :root[data-ambiente="noturna"] .adm-ok{color:#9cd2a0}:root[data-ambiente="noturna"] .adm-warn{color:#f0b46a}:root[data-ambiente="noturna"] .adm-bad{color:#f39a8a}
 .adm-facts{list-style:none;margin:0;padding:0;display:grid;gap:8px;color:var(--text2)}
 .adm-btn{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 20px;border:0;border-radius:var(--radius-sm);background:var(--green);color:#fbf8f2;font:inherit;font-weight:700;text-decoration:none;cursor:pointer}
@@ -1319,7 +1324,7 @@ textarea:focus-visible,
 <div class="modal-backdrop" id="backdrop" data-action="closeModal"></div>
 
 <!-- BOOK MODAL -->
-<div class="book-modal" id="book-modal" role="dialog" aria-modal="true">
+<div class="book-modal" id="book-modal" role="dialog" aria-modal="true" aria-label="Ficha do livro">
   <button class="modal-close-btn" data-action="closeModal" aria-label="Fechar">✕</button>
   <div class="modal-scroll" id="modal-body"></div>
 </div>

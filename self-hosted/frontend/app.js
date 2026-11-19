@@ -551,7 +551,11 @@ async function lookupPorbase(isbn,signal){
   const doc=new DOMParser().parseFromString(xml,'application/xml');
   if(doc.getElementsByTagName('parsererror').length) return null;
   const all=t=>Array.from(doc.getElementsByTagName(t)).map(n=>(n.textContent||'').trim()).filter(Boolean);
-  const titles=all('dc:title'); if(!titles.length) return null;
+  // A PORBASE marca o artigo a ignorar na ordenação com «?» (perde-se a marca
+  // original): «?A ?menina do mar» → «A menina do mar». Um «?» no fim de uma
+  // palavra («Quem sou eu?») fica.
+  const semMarcas=s=>s.replace(/(^|\s)\?(?=[^\s?])/g,'$1');
+  const titles=all('dc:title').map(semMarcas); if(!titles.length) return null;
   const pubs=all('dc:publisher'); const ids=all('dc:identifier');
   const img=ids.find(s=>/ImagesBN|rnod/i.test(s));
   const clean=s=>{let x=s.replace(/,\s*\d{3,4}\s*-\s*\d{0,4}\s*$/,'').trim();const m=x.match(/^([^,]+),\s*(.+)$/);return m?`${m[2]} ${m[1]}`.trim():x;};
@@ -2391,7 +2395,7 @@ function setReaderChip(name){
   const av=$('top-reader-av'), nm=$('top-reader-name'), chip=$('top-reader');
   const initial=(name||'M').trim().charAt(0).toUpperCase();
   if(av){ av.textContent=initial; av.style.background='var(--green-mid)'; }
-  if(nm) nm.textContent=name||'Conta';
+  if(nm) nm.textContent=(name&&name.includes('@'))?name.split('@')[0]:(name||'Conta');
   if(chip) chip.hidden=false;
   const lo=$('am-logout'), ls=$('am-logout-sep'); if(lo) lo.hidden=false; if(ls) ls.hidden=false;
   checkAdmin();
@@ -3330,18 +3334,18 @@ async function renderPublicShare(token){
   }
 }
 
-// Computador (≥1200px): o menu passa para o cabeçalho; no telemóvel e tablet
+// Computador (≥900px): o menu passa para o cabeçalho; no telemóvel e tablet
 // volta à barra de madeira em baixo. É o mesmo elemento (os cliques usam
 // data-action), só muda de sítio.
 function placeNav(){
   const inner=document.querySelector('.nav-inner'), top=document.querySelector('.top-bar'), base=document.querySelector('.bottom-baseboard');
   if(!inner||!top||!base) return;
-  const desk=window.matchMedia('(min-width:1200px)').matches;
+  const desk=window.matchMedia('(min-width:900px)').matches;
   if(desk&&inner.parentElement!==top) top.insertBefore(inner, top.querySelector('.search-wrap'));
   if(!desk&&inner.parentElement!==base) base.appendChild(inner);
   document.body.classList.toggle('nav-top',desk);
 }
-if(window.matchMedia) window.matchMedia('(min-width:1200px)').addEventListener('change',placeNav);
+if(window.matchMedia) window.matchMedia('(min-width:900px)').addEventListener('change',placeNav);
 
 (async function init(){
   // Rota pública de partilha: nem passa pelo login, é só leitura.

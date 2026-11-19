@@ -672,7 +672,7 @@ body{
 .top-reader:active{transform:scale(.97)}
 .top-reader[hidden]{display:none}
 .top-reader .ta-av{width:28px;height:28px;border-radius:50%;background:var(--green-mid);color:#fff;font-weight:700;font-size:.889rem;display:flex;align-items:center;justify-content:center}
-.top-reader .ta-name{font-size:.889rem;font-weight:700;color:var(--text2)}
+.top-reader .ta-name{font-size:.889rem;font-weight:700;color:var(--text2);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* ============================================================
    CATÁLOGO EM CORTIÇA — capas pregadas (substitui a prateleira)
@@ -1209,10 +1209,13 @@ textarea:focus-visible,
 .view-sub{margin:4px 0 0;color:var(--text3)}
 .wish-import-wrap{max-width:720px;margin:0 auto 18px;padding:0 4px}
 
-/* ══ COMPUTADOR (≥1200px): menu no topo, cabeçalho do catálogo numa linha, mais largura ══
+/* ══ COMPUTADOR: menu no topo a partir de 900px; cabeçalho do catálogo numa linha e mais
+   largura a partir de 1200px ══
+   900px e não 1200px: muitos portáteis Windows têm zoom de 125–150%, e um ecrã de
+   1366 ou 1920 px fica com 1000–1300 px «reais» para a página.
    O menu de baixo é de telemóvel: no computador, a mesma .nav-inner passa para o
    cabeçalho (placeNav() em app.js) e a barra de madeira esconde-se. */
-@media(min-width:1200px){
+@media(min-width:900px){
   body.nav-top .bottom-baseboard{display:none}
   body.nav-top .main{padding-bottom:48px}
   .top-bar{gap:16px}
@@ -1226,7 +1229,18 @@ textarea:focus-visible,
   .top-bar .nav-btn.active::after{top:auto;bottom:0;left:14px;right:14px;height:3px;background:var(--green-mid);border-radius:3px 3px 0 0}
   .top-bar .nav-btn:focus-visible{outline:2px solid var(--green-mid);outline-offset:-6px;border-radius:10px}
   .search-wrap{min-width:180px;max-width:340px}
-
+}
+/* 900–1199px: cabeçalho compacto para caber o menu (sem ícones, sem «A ler», só a inicial na conta) */
+@media(min-width:900px) and (max-width:1199px){
+  .top-bar{padding:0 20px;gap:12px}
+  .top-bar .nav-btn{padding:0 9px;font-size:.889rem}
+  .top-bar .nav-btn svg{display:none}
+  .top-bar .nav-btn.active::after{left:9px;right:9px}
+  #aler-pill{display:none}
+  .top-reader .ta-name,.top-reader .ta-chev{display:none}
+  .search-wrap{min-width:120px}
+}
+@media(min-width:1200px){
   /* mais largura: 1100–1200px → 1440px */
   .view,.board-view,.cork-section{max-width:1440px}
   .shelf-context{max-width:1440px}

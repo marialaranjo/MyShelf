@@ -1164,7 +1164,8 @@ textarea:focus-visible,
 .adm-wait{color:var(--text3);font-weight:500}
 :root[data-ambiente="noturna"] .adm-tab[aria-current="true"],:root[data-ambiente="noturna"] .adm-btn{color:#14110d}
 /* Noturna: os verdes usados como texto ficam claros (antes 2,1–3,3:1; agora ≥ 7,8:1) */
-:root[data-ambiente="noturna"] :is(.brand-name em,.col-link,.adm-link,.reading-cta):not(.note *){color:#9cd2a0}
+:root[data-ambiente="noturna"] :is(.brand-name em,.col-link,.adm-link,.reading-cta,.top-bar .nav-btn.active):not(.note *){color:#9cd2a0}
+:root[data-ambiente="noturna"] .top-bar .nav-btn.active::after{background:#9cd2a0}
 :root[data-ambiente="noturna"] .reading-cta:hover{color:#fff}
 /* Abas no escuro: a aba ativa é clara, por isso o número fica escuro */
 :root[data-theme="dark"] :is(.wish-subnav,.loan-subnav) .seg button[aria-selected=true] .num{background:rgba(0,0,0,.12);color:var(--surface)}
@@ -1207,6 +1208,37 @@ textarea:focus-visible,
 .io-moved{max-width:720px;margin:18px auto 0;padding:14px 16px;border:1px dashed var(--border);border-radius:var(--radius);color:var(--text3);background:var(--surface)}
 .view-sub{margin:4px 0 0;color:var(--text3)}
 .wish-import-wrap{max-width:720px;margin:0 auto 18px;padding:0 4px}
+
+/* ══ COMPUTADOR (≥1200px): menu no topo, cabeçalho do catálogo numa linha, mais largura ══
+   O menu de baixo é de telemóvel: no computador, a mesma .nav-inner passa para o
+   cabeçalho (placeNav() em app.js) e a barra de madeira esconde-se. */
+@media(min-width:1200px){
+  body.nav-top .bottom-baseboard{display:none}
+  body.nav-top .main{padding-bottom:48px}
+  .top-bar{gap:16px}
+  .top-bar .nav-inner{width:auto;max-width:none;height:100%;flex:0 0 auto;gap:2px}
+  .top-bar .nav-btn{flex:0 0 auto;flex-direction:row;gap:8px;padding:0 14px;color:var(--text3);font-size:.944rem;font-weight:700}
+  .top-bar .nav-btn svg{width:18px;height:18px}
+  .top-bar .nav-btn:hover{color:var(--text)}
+  .top-bar .nav-btn:hover svg{transform:none}
+  .top-bar .nav-btn.active{color:var(--green-mid)}
+  .top-bar .nav-btn.active svg{transform:none}
+  .top-bar .nav-btn.active::after{top:auto;bottom:0;left:14px;right:14px;height:3px;background:var(--green-mid);border-radius:3px 3px 0 0}
+  .top-bar .nav-btn:focus-visible{outline:2px solid var(--green-mid);outline-offset:-6px;border-radius:10px}
+  .search-wrap{min-width:180px;max-width:340px}
+
+  /* mais largura: 1100–1200px → 1440px */
+  .view,.board-view,.cork-section{max-width:1440px}
+  .shelf-context{max-width:1440px}
+  .room{width:min(1440px,calc(100% - 64px))}
+
+  /* cabeçalho do catálogo numa só linha: título · vista e ordem · selecionar */
+  .shelf-context{flex-wrap:nowrap;align-items:center;padding-top:16px}
+  .shelf-context .cat-more{width:auto;order:2;margin-left:auto}
+  .shelf-context .bulk-toggle{order:3;margin-left:0}
+  .cat-controls{width:auto;flex-wrap:nowrap;gap:18px}
+  .cat-group{flex-direction:row;align-items:center;gap:8px}
+}
 </style>
 </head>
 <body>

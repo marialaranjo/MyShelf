@@ -7,6 +7,11 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
 ## [Não lançado]
 
+### Computador com zoom + títulos da PORBASE
+- Menu no topo a partir de 900 px (cabeçalho compacto entre 900 e 1199 px), para portáteis com zoom de 125–150% no Windows.
+- Conta sem nome no Google: mostra a parte antes do `@`.
+- Títulos da PORBASE sem as marcas «?» («?A ?menina do mar» → «A menina do mar»), nos livros novos (lookup) e nos já gravados (migração `1700000100`).
+
 ### Computador — layout próprio a partir de 1200 px
 - Menu no topo (a barra de baixo fica só para telemóvel e tablet), cabeçalho do Catálogo numa linha e conteúdo até 1440 px de largura.
 

@@ -3330,10 +3330,24 @@ async function renderPublicShare(token){
   }
 }
 
+// Computador (≥1200px): o menu passa para o cabeçalho; no telemóvel e tablet
+// volta à barra de madeira em baixo. É o mesmo elemento (os cliques usam
+// data-action), só muda de sítio.
+function placeNav(){
+  const inner=document.querySelector('.nav-inner'), top=document.querySelector('.top-bar'), base=document.querySelector('.bottom-baseboard');
+  if(!inner||!top||!base) return;
+  const desk=window.matchMedia('(min-width:1200px)').matches;
+  if(desk&&inner.parentElement!==top) top.insertBefore(inner, top.querySelector('.search-wrap'));
+  if(!desk&&inner.parentElement!==base) base.appendChild(inner);
+  document.body.classList.toggle('nav-top',desk);
+}
+if(window.matchMedia) window.matchMedia('(min-width:1200px)').addEventListener('change',placeNav);
+
 (async function init(){
   // Rota pública de partilha: nem passa pelo login, é só leitura.
   const shareMatch=location.pathname.match(/^\/c\/([^/]+)/);
   if(shareMatch){ await renderPublicShare(decodeURIComponent(shareMatch[1])); return; }
+  placeNav();
 
   // PWA: regista o service worker (necessário para "Adicionar ao ecrã principal")
   if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }

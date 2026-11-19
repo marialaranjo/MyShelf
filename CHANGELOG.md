@@ -7,6 +7,9 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
 ## [Não lançado]
 
+### Computador — layout próprio a partir de 1200 px
+- Menu no topo (a barra de baixo fica só para telemóvel e tablet), cabeçalho do Catálogo numa linha e conteúdo até 1440 px de largura.
+
 ### Segurança — link público seguro
 - **[ALTO] Quem tinha o link `/c/<token>` podia pedir ao servidor as notas, o preço, os empréstimos e as sessões de leitura** (o browser escolhia os campos com `fields=`). Agora `GET /api/partilha/:token` (`pb_hooks/partilha.pb.js`) devolve só título, autor, capa, coleção, estado e quantidade, e a migração `1700000090` tira o token das regras de `books` e `libraries`.
 - **Corrigido: a página do link público nunca carregava** (caminhos relativos para `app.js`, `icon.svg` e `manifest.json` em `/c/<token>`).

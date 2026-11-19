@@ -3292,20 +3292,14 @@ async function enterApp(readerName){
 // ARRANQUE
 // ═══════════════════════════════════════════════════════════════════════════
 // ── Vista pública /c/<token> — estante partilhada, sem login ───────────────
-// Pedidos diretos à PocketBase, sem Authorization: o acesso vem só do token
-// na query (ver regra "shareOr" na migração 1700000060_add_shares.js).
-// fields= restringe a resposta aos campos básicos (o servidor não chega a
-// enviar notas/preço); mesmo assim nunca os lemos aqui, por segurança extra.
+// Pedido sem Authorization a /api/partilha/<token> (pb_hooks/partilha.pb.js).
+// É o servidor que escolhe os campos: só título, autor, capa, coleção, estado
+// e quantidade. Notas, preço, empréstimos e sessões nunca saem.
 async function fetchPublicShare(token){
-  const qs=fields=>`?perPage=500&sort=title&token=${encodeURIComponent(token)}&fields=${fields}`;
-  const [booksRes,libsRes]=await Promise.all([
-    fetch(`${PB_URL}/api/collections/books/records${qs('id,title,author,cover,library,status,quantity')}`),
-    fetch(`${PB_URL}/api/collections/libraries/records${qs('id,name,icon')}`),
-  ]);
-  if(!booksRes.ok) throw new Error('share indisponível');
-  const books=(await booksRes.json()).items||[];
-  const libs=libsRes.ok?((await libsRes.json()).items||[]):[];
-  return {books,libs};
+  const res=await fetch(`${PB_URL}/api/partilha/${encodeURIComponent(token)}`);
+  if(!res.ok) throw new Error('share indisponível');
+  const data=await res.json();
+  return {books:data.books||[], libs:data.libs||[]};
 }
 function publicShareHtml(books,libs){
   const libName=id=>{ const l=libs.find(x=>x.id===id); return l?((l.icon?l.icon+' ':'')+l.name):''; };

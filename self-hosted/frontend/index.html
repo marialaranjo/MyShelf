@@ -1267,6 +1267,13 @@ textarea:focus-visible,
 .late-banner-s{font-size:.889rem;color:var(--text3);margin:0}
 .nav-btn .nav-dot{position:absolute;top:10px;right:calc(50% - 26px);min-width:20px;height:20px;padding:0 5px;border-radius:10px;background:#b3261e;color:#fff;font-size:.778rem;font-weight:800;line-height:20px;text-align:center}
 .top-bar .nav-btn .nav-dot{position:static;margin-left:2px}
+
+/* ── Confirmação própria (substitui a janela do navegador) ── */
+.confirm-dlg{margin:auto;inset:0;border:none;border-radius:var(--radius-lg);background:var(--surface);color:var(--text);padding:24px 22px 20px;width:min(420px,calc(100vw - 32px));max-width:none;box-shadow:0 24px 60px rgba(20,12,4,.32)}
+.confirm-dlg::backdrop{background:rgba(30,20,10,.5)}
+.confirm-msg{margin:0 0 20px;font-size:1rem;line-height:1.55;font-weight:500}
+.confirm-row{display:flex;gap:10px;flex-wrap:wrap}
+.confirm-row button{flex:1 1 140px}
 </style>
 </head>
 <body>
@@ -1386,6 +1393,13 @@ textarea:focus-visible,
 <div class="modal-backdrop" id="backdrop" data-action="closeModal"></div>
 
 <!-- BOOK MODAL -->
+<dialog class="confirm-dlg" id="confirm-dlg" aria-labelledby="confirm-msg">
+  <p class="confirm-msg" id="confirm-msg"></p>
+  <div class="confirm-row">
+    <button type="button" class="btn-lend" id="confirm-no">Cancelar</button>
+    <button type="button" class="btn-edit" id="confirm-yes">Confirmar</button>
+  </div>
+</dialog>
 <div class="book-modal" id="book-modal" role="dialog" aria-modal="true" aria-label="Ficha do livro">
   <button class="modal-close-btn" data-action="closeModal" aria-label="Fechar">✕</button>
   <div class="modal-scroll" id="modal-body"></div>

@@ -57,6 +57,8 @@ document.addEventListener('click', e => {
     case 'confirmDelete': return confirmDelete(id);
     case 'deleteCollection': return deleteCollection(id);
     case 'deleteWish': return deleteWish(id);
+    case 'openWishEdit': return openWishEdit(id);
+    case 'openLoanExtend': return openLoanExtend(id);
     case 'doDelete': return doDelete(id);
     case 'handleReadingBtn': return handleReadingBtn(id);
     case 'openEditModal': return openEditModal(id);
@@ -110,6 +112,8 @@ document.addEventListener('submit', e => {
     case 'saveEdit': return saveEdit(e, id);
     case 'confirmLend': return confirmLend(e, id);
     case 'confirmEnrich': return confirmEnrich(e, id);
+    case 'saveWishEdit': return saveWishEdit(e, id);
+    case 'saveLoanExtend': return saveLoanExtend(e, id);
     case 'saveGoal': e.preventDefault(); return saveGoal();
     case 'sendInvite': e.preventDefault(); return sendInvite();
   }
@@ -664,6 +668,7 @@ async function loadAll(){
   STATE.wish  = wish;
   STATE.loans = loans;
   refreshALerCount();
+  refreshLateBadge();
   renderFilterChips();
 }
 // Recarrega e volta a desenhar a vista actual
@@ -1211,7 +1216,7 @@ function loanCardHtml(l){
   const pillTxt=isBack?'Devolvido':isLate?'Atrasado':'Em curso';
   const action=isBack
     ? `<button class="loan-return" type="button" data-action="reopenLoan" data-id="${l._loanId||''}" data-id2="${l._bookId}">Emprestar de novo</button>`
-    : `<button class="loan-return" type="button" data-action="returnLoan" data-id="${l._loanId||''}" data-id2="${l._bookId}">Marcar devolvido</button>`;
+    : `${l._loanId?`<button class="loan-extend" type="button" data-action="openLoanExtend" data-id="${l._loanId}">Prolongar</button>`:''}<button class="loan-return" type="button" data-action="returnLoan" data-id="${l._loanId||''}" data-id2="${l._bookId}">Marcar devolvido</button>`;
   return `<div class="loan-card${isBack?' returned':''}">
     <span class="loan-stamp ${stampCls}">${stampLabel}<small>${stampSub}</small></span>
     <div class="loan-cover c-${l.color}">${escHtml((l.title[0]||'?'))}</div>
@@ -1224,6 +1229,62 @@ function loanCardHtml(l){
     </div></div>`;
 }
 function setLoanTab(tab){ loanTab=tab; renderResumo(); }
+
+// ── Prolongar um empréstimo (mudar a data de devolução) ────────────────────
+function isoPlusDays(iso,n){ const d=new Date((iso||new Date().toISOString().slice(0,10))+'T12:00:00'); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
+function openLoanExtend(loanId){
+  const l=STATE.loans.find(x=>x.id===loanId); if(!l) return;
+  const b=byId(l.book)||{};
+  const today=new Date().toISOString().slice(0,10);
+  const base=(l.dueDate&&l.dueDate>today)?l.dueDate:today;   // em atraso: conta a partir de hoje
+  openSheet(`
+    <div class="edit-head">Prolongar empréstimo</div>
+    <p class="lend-book">&ldquo;${escHtml(b.title||'—')}&rdquo; &middot; com ${escHtml(l.who||'—')}</p>
+    <form class="edit-form" data-onsubmit="saveLoanExtend" data-id="${loanId}">
+      <div class="efield"><label for="lx-due">Nova data de devolução</label>
+        <input id="lx-due" type="date" min="${today}" value="${isoPlusDays(base,14)}" required></div>
+      <p class="lx-hint">Antes: ${l.dueDate?fmtDate(l.dueDate):'sem data'}. Sugestão: mais 14 dias.</p>
+      <div class="edit-actions">
+        <button type="submit" class="btn-edit">Guardar nova data</button>
+        <button type="button" class="btn-lend" data-action="closeModal">Cancelar</button>
+      </div>
+    </form>`,'lx-due');
+}
+async function saveLoanExtend(e,loanId){
+  if(e&&e.preventDefault) e.preventDefault();
+  const due=($('lx-due')||{}).value||'';
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(due)){ $('lx-due')?.focus(); return; }
+  await DB.updateLoan(loanId,{dueDate:due});
+  unsavedChanges=true; await loadAll(); closeModal(); renderResumo(); showToast('Devolução passa para '+fmtDate(due));
+}
+
+// ── Aviso de empréstimos em atraso (Resumo + número no menu) ───────────────
+function lateLoans(){ return buildLoanViews().filter(l=>l.state==='late'); }
+function lateBannerHtml(){
+  const late=lateLoans(); if(!late.length) return '';
+  const today=new Date();
+  const item=l=>{
+    const loan=STATE.loans.find(x=>x.id===l._loanId);
+    const due=loan&&loan.dueDate?new Date(loan.dueDate+'T12:00:00'):null;
+    const dias=due?Math.max(1,Math.floor((today-due)/864e5)):null;
+    return `<li><strong>${escHtml(l.title)}</strong> com ${escHtml(l.who)}${dias?` — ${dias} ${dias===1?'dia':'dias'} de atraso`:''}</li>`;
+  };
+  return `<div class="late-banner" role="status">
+    <div class="late-banner-t">${late.length===1?'Há 1 livro por devolver':`Há ${late.length} livros por devolver`}</div>
+    <ul>${late.slice(0,4).map(item).join('')}${late.length>4?`<li>e mais ${late.length-4}…</li>`:''}</ul>
+    <p class="late-banner-s">Podes marcar como devolvido ou prolongar a data em «Fora de casa».</p>
+  </div>`;
+}
+function refreshLateBadge(){
+  const n=lateLoans().length;
+  document.querySelectorAll('.nav-btn[data-arg="stats"]').forEach(btn=>{
+    let dot=btn.querySelector('.nav-dot');
+    if(!n){ if(dot) dot.remove(); btn.removeAttribute('aria-label'); return; }
+    if(!dot){ dot=document.createElement('span'); dot.className='nav-dot'; dot.setAttribute('aria-hidden','true'); btn.appendChild(dot); }
+    dot.textContent=n;
+    btn.setAttribute('aria-label',`Resumo, ${n} ${n===1?'empréstimo em atraso':'empréstimos em atraso'}`);
+  });
+}
 async function returnLoan(loanId,bookId){
   if(bookId) await DB.updateBook(bookId,{lent:false,lentTo:'',lentDate:''});
   if(loanId) await DB.updateLoan(loanId,{returned:true,returnedDate:new Date().toISOString().slice(0,10)});
@@ -1399,6 +1460,7 @@ function renderResumo(){
     <section class="board-view">
       <div class="board-head"><div class="board-kicker">A minha leitura</div><h1 class="board-title">Resumo</h1>
         <p class="board-sub">Um retrato da tua leitura, mês a mês, e dos livros que andam fora de casa.</p></div>
+      ${lateBannerHtml()}
       <div class="split-board">
         <div class="split-col"><div class="split-col-head"><div class="split-col-title">Estatísticas</div><div class="split-col-count">${total} livros</div></div>
           <div class="board"><div class="pin-board">${statsNotes}</div></div></div>
@@ -1510,6 +1572,7 @@ function renderWishlist(){
       <div class="wish-author">${escHtml(w.author||'')}</div>
       <div class="wish-foot">${link}</div>
       ${advance}
+      <button type="button" class="col-link wish-edit" data-action="openWishEdit" data-id="${w.id}" aria-label="Editar ${escAttr(w.title||'este desejo')}">Editar</button>
       <button type="button" class="col-link col-del wish-del" data-action="deleteWish" data-id="${w.id}" aria-label="Apagar ${escAttr(w.title||'este desejo')}">Apagar</button>
     </div>`;
   }).join('');
@@ -1549,6 +1612,47 @@ function renderWishlist(){
     ${subnav}<div class="board"><div class="pin-board">${body}</div></div></section>`;
 }
 function setWishTab(tab){ wishTab=tab; renderWishlist(); }
+
+// Abre a ficha (o mesmo painel do livro) com um formulário já preenchido.
+function openSheet(html,focusId){
+  $('modal-body').innerHTML=html;
+  lastFocusedEl=document.activeElement;
+  $('book-modal').classList.add('open'); $('backdrop').classList.add('open');
+  document.body.style.overflow='hidden';
+  const f=focusId&&$(focusId); if(f) f.focus();
+}
+
+// ── Editar um desejo (antes só dava para apagar) ──────────────────────────
+function openWishEdit(id){
+  const w=STATE.wish.find(x=>x.id===id); if(!w) return;
+  const cur=(w.priority||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');   // "média" antigo = "media"
+  const prioOpts=[['','Sem prioridade'],['alta','Alta'],['media','Média'],['baixa','Baixa']]
+    .map(([v,l])=>`<option value="${v}" ${cur===v?'selected':''}>${l}</option>`).join('');
+  openSheet(`
+    <div class="edit-head">Editar desejo</div>
+    <form class="edit-form" data-onsubmit="saveWishEdit" data-id="${id}">
+      <div class="efield"><label for="we-title">Título</label><input id="we-title" value="${escAttr(w.title||'')}" required></div>
+      <div class="efield"><label for="we-author">Autor</label><input id="we-author" value="${escAttr(w.author||'')}"></div>
+      <div class="efield-row">
+        <div class="efield"><label for="we-isbn">ISBN</label><input id="we-isbn" inputmode="numeric" value="${escAttr(w.isbn||'')}"></div>
+        <div class="efield"><label for="we-prio">Prioridade</label><select id="we-prio">${prioOpts}</select></div>
+      </div>
+      <div class="efield"><label for="we-url">Link da livraria</label><input id="we-url" type="url" value="${escAttr(w.url||'')}" placeholder="https://…"></div>
+      <div class="efield"><label for="we-notes">Notas</label><textarea id="we-notes" rows="3">${escHtml(w.notes||'')}</textarea></div>
+      <div class="edit-actions">
+        <button type="submit" class="btn-edit">Guardar alterações</button>
+        <button type="button" class="btn-lend" data-action="closeModal">Cancelar</button>
+      </div>
+    </form>`,'we-title');
+}
+async function saveWishEdit(e,id){
+  if(e&&e.preventDefault) e.preventDefault();
+  const v=k=>($(k)?$(k).value:'').trim();
+  const title=v('we-title'); if(!title){ $('we-title')?.focus(); return; }
+  await DB.updateWish(id,{ title, author:v('we-author'), isbn:v('we-isbn').replace(/[^0-9X]/gi,''),
+    priority:v('we-prio'), url:v('we-url'), notes:v('we-notes') });
+  unsavedChanges=true; await loadAll(); closeModal(); renderWishlist(); showToast('Desejo atualizado');
+}
 function gotoWishImport(){
   const btn=Array.prototype.find.call(document.querySelectorAll('.nav-btn'),b=>/wishlist/i.test(b.textContent));
   setNav(btn,'wishlist'); toggleWishImport();

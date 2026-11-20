@@ -7,6 +7,10 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
 ## [Não lançado]
 
+### Abre mais depressa e sem estante de exemplo em produção
+- Letras (DM Sans e Instrument Serif) servidas pelo próprio servidor a partir de `/fonts/` (woff2, SIL OFL 1.1). Deixa de haver pedidos ao Google Fonts, e a CSP fica `style-src 'self' 'unsafe-inline'` e `font-src 'self'`.
+- O modo de demonstração só funciona em `localhost` ou ficheiro local. Em produção, sem servidor, o ecrã de entrada diz «Não consegui ligar ao servidor…» e mostra o botão «Tentar outra vez».
+
 ### A sessão renova-se sozinha
 - Ao abrir a app, a sessão é confirmada e renovada (`auth-refresh`); com a app aberta, renova de 6 em 6 horas e ao voltar ao separador. Se já não for válida, o ecrã de entrada diz «A tua sessão terminou. Entra outra vez para continuar.» (antes a estante aparecia vazia, sem aviso). Sem rede, a sessão mantém-se.
 

@@ -1292,6 +1292,10 @@ textarea:focus-visible,
 .confirm-msg{margin:0 0 20px;font-size:1rem;line-height:1.55;font-weight:500}
 .confirm-row{display:flex;gap:10px;flex-wrap:wrap}
 .confirm-row button{flex:1 1 140px}
+
+/* ── Aviso de sessão terminada no ecrã de entrada ── */
+.login-note{margin:0 0 16px;padding:10px 14px;border-radius:10px;background:rgba(163,80,31,.1);border-left:4px solid var(--orange-mid);color:var(--text);font-weight:600;font-size:.944rem;text-align:left}
+.login-note[hidden]{display:none}
 </style>
 </head>
 <body>
@@ -1305,6 +1309,7 @@ textarea:focus-visible,
     </svg>
     <h1 class="login-brand"><span class="lb1">my</span><span class="lb2">shelf</span></h1>
     <p class="login-sub">Um espaço para a tua coleção,<br>em três bibliotecas.</p>
+    <p class="login-note" id="login-note" role="status" hidden></p>
     <button type="button" class="btn-google" id="g-btn" data-action="doLogin">
       <svg class="g-logo" viewBox="0 0 18 18" aria-hidden="true">
         <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92a8.78 8.78 0 0 0 2.68-6.62z"/>

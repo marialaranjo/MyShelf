@@ -7,6 +7,9 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
 ## [Não lançado]
 
+### A sessão renova-se sozinha
+- Ao abrir a app, a sessão é confirmada e renovada (`auth-refresh`); com a app aberta, renova de 6 em 6 horas e ao voltar ao separador. Se já não for válida, o ecrã de entrada diz «A tua sessão terminou. Entra outra vez para continuar.» (antes a estante aparecia vazia, sem aviso). Sem rede, a sessão mantém-se.
+
 ### Correção — o browser podia continuar com a versão antiga da app
 - Atrás de uma CDN que reescreva o `Cache-Control` (o Cloudflare, por defeito, põe 4 h), o browser e o service worker continuavam a usar o `app.js` antigo depois de um deploy. Os atalhos protegidos davam 401 e as novidades não apareciam.
 - A imagem do nginx passa a pôr uma impressão digital no endereço do script (`/app.js?v=…`). O service worker revalida sempre (`cache: 'no-cache'`) e passa a `biblio-shell-v3`.

@@ -2669,6 +2669,40 @@ async function handleOAuthCallback(){
     return true;
   }catch(err){ showToast('Erro no login Google: '+err.message); return false; }
 }
+// ── Sessão: confirma e renova o token no PocketBase ───────────────────────
+// Um token expirado não dá erro nas listas (o PocketBase devolve-as vazias),
+// por isso sem isto a app mostrava a estante vazia sem explicar porquê.
+let lastSessionRefresh=0;
+async function refreshSession(){
+  if(!AUTH.token) return false;
+  try{
+    const r=await fetch(`${PB_URL}/api/collections/users/auth-refresh`,{method:'POST',headers:AUTH.authHeader()});
+    if(r.status===401||r.status===403||r.status===404){ AUTH.clear(); return false; }
+    if(r.ok){
+      const d=await r.json();
+      if(d.token) AUTH.token=d.token;
+      if(d.record) AUTH.user=Object.assign({},AUTH.user||{},d.record);
+      lastSessionRefresh=Date.now();
+    }
+  }catch(_){ /* sem rede: mantém a sessão e tenta mais tarde */ }
+  return true;
+}
+function sessionExpired(){
+  const n=$('login-note');
+  if(n){ n.textContent='A tua sessão terminou. Entra outra vez para continuar.'; n.hidden=false; }
+  showLoginScreen();
+}
+// Com a app aberta: renova de 6 em 6 horas e quando voltas ao separador (se já passou 1 hora).
+let sessionKeeperOn=false;
+function startSessionKeeper(){
+  if(sessionKeeperOn||!usePocketBase) return; sessionKeeperOn=true;
+  const check=async()=>{ if(!AUTH.token) return; if(!(await refreshSession())) sessionExpired(); };
+  setInterval(check,6*60*60*1000);
+  document.addEventListener('visibilitychange',()=>{
+    if(document.visibilityState==='visible'&&Date.now()-lastSessionRefresh>60*60*1000) check();
+  });
+}
+
 function logout(){
   AUTH.clear();
   if(AUTH_REQUIRED){ location.reload(); return; }
@@ -3602,8 +3636,11 @@ if(window.matchMedia) window.matchMedia('(min-width:900px)').addEventListener('c
 
   // fluxo de autenticação
   if(AUTH_REQUIRED&&usePocketBase){
-    if(location.search.includes('code=')){ const ok=await handleOAuthCallback(); if(ok){ await enterApp(); return; } }
-    if(AUTH.isValid){ await enterApp(); return; }
+    if(location.search.includes('code=')){ const ok=await handleOAuthCallback(); if(ok){ lastSessionRefresh=Date.now(); await enterApp(); startSessionKeeper(); return; } }
+    if(AUTH.isValid){
+      if(await refreshSession()){ await enterApp(); startSessionKeeper(); return; }
+      sessionExpired(); return;
+    }
     showLoginScreen();   // espera pelo botão Google
   }else{
     // offline / file:// — mostra o gate (botão entra em modo demonstração)

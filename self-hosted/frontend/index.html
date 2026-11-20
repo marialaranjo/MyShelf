@@ -357,7 +357,7 @@ body{
 .author-name{font-size:.9rem;font-weight:600;color:var(--text2)}
 .author-count{font-size:.889rem;color:var(--text4);font-variant-numeric:tabular-nums}
 .rt-row{display:flex;align-items:center;gap:12px;margin:7px 0}
-.rt-star{width:58px;font-size:.889rem;color:var(--gold);flex-shrink:0;letter-spacing:.02em}
+.rt-star{min-width:76px;white-space:nowrap;font-size:.889rem;color:var(--gold);flex-shrink:0;letter-spacing:.02em}
 .rt-track{flex:1;height:9px;background:var(--surface3);border-radius:5px;overflow:hidden}
 .rt-fill{height:100%;background:var(--gold);border-radius:5px;transition:width .7s var(--spring)}
 .rt-n{width:22px;text-align:right;font-size:.889rem;color:var(--text4);font-variant-numeric:tabular-nums}
@@ -482,7 +482,11 @@ body{
 
 .note-wish{display:flex;flex-direction:column}
 .note-wish .prio{align-self:flex-start;margin-bottom:4px}
-.note-wish .wish-cover{width:46px;height:64px;font-size:1.5rem}
+.note-wish .wish-cover{width:64px;height:94px;font-size:1.7rem;position:relative;overflow:hidden;box-shadow:inset -2px 0 4px rgba(0,0,0,.2),2px 3px 8px rgba(40,25,10,.22)}
+.wish-cover img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit}
+.we-cover-row{display:flex;gap:8px;align-items:stretch}
+.we-cover-row input{flex:1;min-width:0}
+.we-cover-row .btn-lend{flex:none;min-height:44px;padding:0 14px}
 .note-wish .wish-title{margin-top:2px}
 .wish-foot{display:flex;justify-content:space-between;align-items:baseline;margin-top:10px}
 .note-wish .wish-buy{width:100%;justify-content:center;margin-top:13px}
@@ -587,8 +591,16 @@ body{
 .split-col .pin-board{gap:22px 18px}
 .split-col .note{width:100%!important;max-width:none}
 .split-col .loan-grid{grid-template-columns:1fr}
+.pin-stack{display:contents}
 @media(min-width:760px){
   .split-board{grid-template-columns:1fr 1fr;gap:34px}
+}
+@media(min-width:1200px){
+  /* Resumo no computador: estatísticas à esquerda em duas colunas de papéis,
+     «Fora de casa» à direita — a página fica com cerca de metade da altura */
+  .split-board{grid-template-columns:minmax(0,5fr) minmax(0,3fr)}
+  .split-col .pin-board{display:grid;grid-template-columns:1fr 1fr;gap:0 24px;align-items:start}
+  .split-col .pin-stack{display:flex;flex-direction:column;gap:30px}
 }
 
 /* ===== WISHLIST SUB-TABS (Desejados / Comprados / Adicionados) ===== */
@@ -1256,9 +1268,10 @@ textarea:focus-visible,
 
 /* ── Desejos, empréstimos e atrasos ── */
 .wish-edit{position:absolute;top:4px;left:6px}
-.loan-extend{min-height:44px;padding:0 14px;border-radius:100px;border:1.5px solid var(--border);background:transparent;color:var(--text2);font-family:'DM Sans',sans-serif;font-weight:700;font-size:.889rem;cursor:pointer;margin-left:auto}
+.loan-extend{min-height:44px;padding:0 14px;border-radius:100px;border:1.5px solid var(--border);background:transparent;color:var(--text2);font-family:'DM Sans',sans-serif;font-weight:700;font-size:.889rem;cursor:pointer}
 .loan-extend:hover{border-color:var(--green-mid);color:var(--green)}
-.loan-extend+.loan-return{margin-left:0}
+.loan-acts{display:flex;flex-wrap:wrap;gap:8px;margin-left:auto;justify-content:flex-end}
+.loan-acts .loan-return{margin-left:0}
 .lx-hint{font-size:.889rem;color:var(--text3);margin:-4px 0 14px}
 .late-banner{background:var(--surface);border:1.5px solid var(--border);border-left:6px solid var(--orange-mid);border-radius:var(--radius);padding:14px 18px;margin:0 0 22px;box-shadow:var(--shadow);color:var(--text)}
 .late-banner-t{font-weight:800;font-size:1rem;margin-bottom:6px}

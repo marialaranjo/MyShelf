@@ -58,6 +58,7 @@ document.addEventListener('click', e => {
     case 'deleteCollection': return deleteCollection(id);
     case 'deleteWish': return deleteWish(id);
     case 'openWishEdit': return openWishEdit(id);
+    case 'findWishCoverInForm': return findWishCoverInForm();
     case 'openLoanExtend': return openLoanExtend(id);
     case 'doDelete': return doDelete(id);
     case 'handleReadingBtn': return handleReadingBtn(id);
@@ -1237,7 +1238,7 @@ function loanCardHtml(l){
   const pillTxt=isBack?'Devolvido':isLate?'Atrasado':'Em curso';
   const action=isBack
     ? `<button class="loan-return" type="button" data-action="reopenLoan" data-id="${l._loanId||''}" data-id2="${l._bookId}">Emprestar de novo</button>`
-    : `${l._loanId?`<button class="loan-extend" type="button" data-action="openLoanExtend" data-id="${l._loanId}">Prolongar</button>`:''}<button class="loan-return" type="button" data-action="returnLoan" data-id="${l._loanId||''}" data-id2="${l._bookId}">Marcar devolvido</button>`;
+    : `<span class="loan-acts">${l._loanId?`<button class="loan-extend" type="button" data-action="openLoanExtend" data-id="${l._loanId}">Prolongar</button>`:''}<button class="loan-return" type="button" data-action="returnLoan" data-id="${l._loanId||''}" data-id2="${l._bookId}">Marcar devolvido</button></span>`;
   return `<div class="loan-card${isBack?' returned':''}">
     <span class="loan-stamp ${stampCls}">${stampLabel}<small>${stampSub}</small></span>
     <div class="loan-cover c-${l.color}">${escHtml((l.title[0]||'?'))}</div>
@@ -1449,7 +1450,8 @@ function renderResumo(){
   const maxBar=Math.max(lidos,aLer,paraLer,1), maxRt=Math.max(1,...dist);
   const bars=[['Lidos',lidos,'bar-lido'],['A ler',aLer,'bar-lendo'],['Para ler',paraLer,'bar-para']];
   const dayMap=readingByDay();
-  const statsNotes=calendarNoteHtml(dayMap)+goalNoteHtml(dayMap)+`
+  // Duas pilhas: no computador largo ficam lado a lado; no resto, os papéis seguem uns atrás dos outros.
+  const statsNotes=`<div class="pin-stack">${calendarNoteHtml(dayMap)}${goalNoteHtml(dayMap)}</div><div class="pin-stack">`+`
     <div class="note"><div class="note-k">Resumo</div>
       <div class="note-metrics">
         <div><div class="nm-num">${lidos}</div><div class="nm-cap">Lidos</div></div>
@@ -1484,7 +1486,7 @@ function renderResumo(){
       ${lateBannerHtml()}
       <div class="split-board">
         <div class="split-col"><div class="split-col-head"><div class="split-col-title">Estatísticas</div><div class="split-col-count">${total} livros</div></div>
-          <div class="board"><div class="pin-board">${statsNotes}</div></div></div>
+          <div class="board"><div class="pin-board">${statsNotes}</div></div></div></div>
         <div class="split-col"><div class="split-col-head"><div class="split-col-title">Fora de casa</div><div class="split-col-count">${shown.length} ${shown.length===1?'livro':'livros'}</div></div>
           ${loansBlock}</div>
       </div></section>`;
@@ -1586,9 +1588,9 @@ function renderWishlist(){
       : `<div class="wish-done">Já está na estante ✓</div>`;
     const prio=wishTab==='desejado'&&w.priority?`<span class="prio prio-${w.priority}">Prioridade ${({alta:'alta',media:'média',baixa:'baixa'})[w.priority]||escHtml(w.priority)}</span>`:'';
     const link=w.url?`<a class="wish-store" href="${escAttr(w.url)}" target="_blank" rel="noopener noreferrer">Ver na livraria ↗</a>`:'';
-    return `<div class="note note-wish" style="width:222px">
+    return `<div class="note note-wish" style="width:222px" data-wish-id="${w.id}">
       ${prio}
-      <div class="wish-cover c-${color}">${escHtml((w.title||'?')[0])}</div>
+      ${wishCoverHtml(w,color)}
       <div class="wish-title">${escHtml(w.title||'')}</div>
       <div class="wish-author">${escHtml(w.author||'')}</div>
       <div class="wish-foot">${link}</div>
@@ -1631,8 +1633,79 @@ function renderWishlist(){
       <button type="button" id="wish-import-btn" class="scan-connect" style="border-radius:var(--radius);margin-top:10px;width:100%;justify-content:center" data-action="runWishImport">Importar para a wishlist</button>
     </div>
     ${subnav}<div class="board"><div class="pin-board">${body}</div></div></section>`;
+  fillWishCovers();
 }
 function setWishTab(tab){ wishTab=tab; renderWishlist(); }
+
+function wishCoverHtml(w,color){
+  const ini=escHtml((w.title||'?').trim().charAt(0).toUpperCase());
+  // Se a imagem falhar, o tratamento global de erros remove o <img> e fica a inicial.
+  const img=w.cover?`<img src="${escAttr(w.cover)}" alt="" loading="lazy">`:'';
+  return `<div class="wish-cover c-${color||colorFor(w)}${w.cover?' has-photo':''}"><span aria-hidden="true">${ini}</span>${img}</div>`;
+}
+// Normaliza para comparar títulos: sem acentos, sem pontuação, minúsculas.
+function normTitle(t){ return String(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9 ]+/g,' ').replace(/\s+/g,' ').trim(); }
+function sameTitle(a,b){ const x=normTitle(a), y=normTitle(b); if(!x||!y) return false; const k=Math.min(14,x.length,y.length); return x.slice(0,k)===y.slice(0,k); }
+async function findCover({title,author,isbn}){
+  if(isbn){ try{ const d=await lookupISBN(isbn); if(d&&d.cover) return d.cover; }catch(_){} }
+  if(!title) return '';
+  const surname=normTitle((author||'').split(',')[0]).split(' ').pop()||'';
+  // 1) Google Books (tem mais edições portuguesas) — só aceita se o título bater certo
+  try{
+    const q=`intitle:${title}${author?` inauthor:${author.split(',')[0]}`:''}`;
+    const r=await fetch(`/api/google-books?q=${encodeURIComponent(q)}&maxResults=5`,{headers:AUTH.authHeader()});
+    if(r.ok){ const d=await r.json();
+      const it=(d.items||[]).find(i=>i.volumeInfo&&i.volumeInfo.imageLinks&&sameTitle(i.volumeInfo.title,title));
+      if(it) return it.volumeInfo.imageLinks.thumbnail.replace('http://','https://'); }
+  }catch(_){}
+  // 2) Open Library — título igual; ou, com autor indicado, o 1.º resultado desse autor
+  //    (ex.: «Klara e o Sol» → capa de «Klara and the Sun»). Nunca um livro qualquer.
+  try{
+    const r=await searchByText((title+' '+(author||'')).trim());
+    const hit=r.find(x=>x.cover&&sameTitle(x.title,title))
+      ||(surname.length>2&&r[0]&&r[0].cover&&normTitle(r[0].author).includes(surname)?r[0]:null);
+    if(hit) return hit.cover;
+  }catch(_){}
+  return '';
+}
+// Desejos sem capa: procura em segundo plano (uma vez por sessão, um de cada vez).
+// Desejos importados antes desta versão guardaram o 1.º resultado da Open Library
+// sem confirmar o título — esses são verificados uma vez e corrigidos se não baterem.
+const wishCoverTried=new Set(); let wishCoverRunning=false;
+function wishCoverChecked(){ try{ return new Set(JSON.parse(localStorage.getItem('wishCoverOk')||'[]')); }catch{ return new Set(); } }
+function markWishCoverChecked(id){ try{ const s=wishCoverChecked(); s.add(id); localStorage.setItem('wishCoverOk',JSON.stringify([...s].slice(-500))); }catch{} }
+async function fillWishCovers(){
+  if(wishCoverRunning) return; wishCoverRunning=true;
+  try{
+    const ok=wishCoverChecked();
+    const suspeita=w=>!w.isbn&&/covers\.openlibrary\.org\/b\/id\//.test(w.cover||'')&&!ok.has(w.id);
+    const todo=STATE.wish.filter(w=>w.title&&!wishCoverTried.has(w.id)&&(!w.cover||suspeita(w))).slice(0,15);
+    for(const w of todo){
+      wishCoverTried.add(w.id);
+      const verificar=!!w.cover;
+      let cover=await findCover(w);
+      if(!cover&&verificar){
+        // Só apaga a capa antiga se a pesquisa respondeu (não foi falta de rede).
+        const r=await searchByText(w.title).catch(()=>[]);
+        if(!r.length){ await new Promise(r=>setTimeout(r,250)); continue; }
+      }
+      if(verificar) markWishCoverChecked(w.id);
+      if(cover!==(w.cover||'')){
+        await DB.updateWish(w.id,{cover}); w.cover=cover;
+        const el=document.querySelector(`.note-wish[data-wish-id="${w.id}"] .wish-cover`);
+        if(el) el.outerHTML=wishCoverHtml(w);
+      }
+      await new Promise(r=>setTimeout(r,250));
+    }
+  }finally{ wishCoverRunning=false; }
+}
+async function findWishCoverInForm(){
+  const st=$('we-cover-status'), v=k=>($(k)?$(k).value:'').trim();
+  if(st) st.textContent='A procurar…';
+  const cover=await findCover({title:v('we-title'),author:v('we-author'),isbn:v('we-isbn').replace(/[^0-9X]/gi,'')});
+  if(cover){ $('we-cover').value=cover; if(st) st.textContent='Capa encontrada. Guarda para ficar.'; }
+  else if(st) st.textContent='Não encontrei capa. Podes colar o link de uma imagem.';
+}
 
 // Abre a ficha (o mesmo painel do livro) com um formulário já preenchido.
 function openSheet(html,focusId){
@@ -1658,6 +1731,10 @@ function openWishEdit(id){
         <div class="efield"><label for="we-isbn">ISBN</label><input id="we-isbn" inputmode="numeric" value="${escAttr(w.isbn||'')}"></div>
         <div class="efield"><label for="we-prio">Prioridade</label><select id="we-prio">${prioOpts}</select></div>
       </div>
+      <div class="efield"><label for="we-cover">Capa (link da imagem)</label>
+        <div class="we-cover-row"><input id="we-cover" type="url" value="${escAttr(w.cover||'')}" placeholder="https://…">
+        <button type="button" class="btn-lend" data-action="findWishCoverInForm">Procurar capa</button></div>
+        <p class="lx-hint" id="we-cover-status" role="status"></p></div>
       <div class="efield"><label for="we-url">Link da livraria</label><input id="we-url" type="url" value="${escAttr(w.url||'')}" placeholder="https://…"></div>
       <div class="efield"><label for="we-notes">Notas</label><textarea id="we-notes" rows="3">${escHtml(w.notes||'')}</textarea></div>
       <div class="edit-actions">
@@ -1671,7 +1748,8 @@ async function saveWishEdit(e,id){
   const v=k=>($(k)?$(k).value:'').trim();
   const title=v('we-title'); if(!title){ $('we-title')?.focus(); return; }
   await DB.updateWish(id,{ title, author:v('we-author'), isbn:v('we-isbn').replace(/[^0-9X]/gi,''),
-    priority:v('we-prio'), url:v('we-url'), notes:v('we-notes') });
+    priority:v('we-prio'), url:v('we-url'), notes:v('we-notes'), cover:v('we-cover') });
+  markWishCoverChecked(id);
   unsavedChanges=true; await loadAll(); closeModal(); renderWishlist(); showToast('Desejo atualizado');
 }
 function gotoWishImport(){
@@ -1706,11 +1784,7 @@ async function saveNewWish(){
   const isbn=($('wish-isbn')?.value||'').replace(/[^0-9X]/gi,'');
   let cover='';
   // Tentar buscar capa se tiver ISBN ou título+autor
-  if(isbn){
-    try{ const d=await lookupISBN(isbn); if(d&&d.cover) cover=d.cover; }catch(_){}
-  } else if(title){
-    try{ const r=await searchByText(title+' '+($('wish-author')?.value||'')); if(r[0]&&r[0].cover) cover=r[0].cover; }catch(_){}
-  }
+  try{ cover=await findCover({title,author:($('wish-author')?.value||'').trim(),isbn}); }catch(_){}
   const wish={
     title,
     author:($('wish-author')?.value||'').trim(),
@@ -1752,13 +1826,14 @@ async function runWishImport(){
   st.className='isbn-status is-loading'; st.innerHTML=`<span class="isbn-spin"></span>A importar ${lines.length} item(ns)…`;
   let ok=0, fail=0;
   for(const line of lines){
-    // Aceita "Título — Autor" ou "Título - Autor" ou só "Título"
-    const parts=line.split(/\s*[—–\-]\s*/);
+    // Aceita "Título — Autor" ou "Título - Autor" ou só "Título".
+    // O hífen só separa com espaços dos dois lados («Tornar-se» fica inteiro).
+    const parts=line.split(/\s+-\s+|\s*[—–]\s*/);
     const title=parts[0]?.trim();
     const author=parts[1]?.trim()||'';
     if(!title){ fail++; continue; }
     let cover='';
-    try{ const r=await searchByText((title+' '+author).trim()); if(r[0]&&r[0].cover) cover=r[0].cover; }catch(_){}
+    try{ cover=await findCover({title,author}); }catch(_){}
     try{
       await DB.addWish({ title, author, cover, status:'desejado', added:new Date().toISOString() });
       ok++;

@@ -10,6 +10,12 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 ### Confirmações com o aspeto da app
 - As perguntas «Tens a certeza?» passam a aparecer numa caixa da própria app (`<dialog>` nativo), com as cores do ambiente e botões com nome claro («Apagar», «Suspender»…), em vez da janela do navegador. Nas ações que apagam, o foco começa em «Cancelar»; Esc ou clicar fora cancela.
 
+### Capas na Wishlist e Resumo mais compacto no computador
+- Os desejos mostram a capa do livro; as que faltam são procuradas em segundo plano (Google Books → Open Library), só aceitando resultados com o mesmo título ou autor. «Editar desejo» ganhou «Procurar capa».
+- «Colar uma lista»: o hífen só separa título e autor com espaços dos dois lados.
+- nginx: `img-src` permite `archive.org` — as capas da Open Library redirecionam para lá e estavam a ser bloqueadas.
+- Resumo a partir de 1200 px: estatísticas em duas colunas e «Fora de casa» ao lado.
+
 ### Novo — editar desejos, prolongar empréstimos e aviso de atrasos
 - **Editar um desejo:** botão «Editar» em cada papel da Wishlist, com a ficha já preenchida (título, autor, ISBN, prioridade, link, notas).
 - **Prolongar um empréstimo:** botão «Prolongar» nos cartões de «Fora de casa» para escolher nova data de devolução (sugestão: +14 dias).

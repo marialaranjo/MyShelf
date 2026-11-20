@@ -7,6 +7,10 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
 ## [Não lançado]
 
+### Correção — o browser podia continuar com a versão antiga da app
+- Atrás de uma CDN que reescreva o `Cache-Control` (o Cloudflare, por defeito, põe 4 h), o browser e o service worker continuavam a usar o `app.js` antigo depois de um deploy. Os atalhos protegidos davam 401 e as novidades não apareciam.
+- A imagem do nginx passa a pôr uma impressão digital no endereço do script (`/app.js?v=…`). O service worker revalida sempre (`cache: 'no-cache'`) e passa a `biblio-shell-v3`.
+
 ### Confirmações com o aspeto da app
 - As perguntas «Tens a certeza?» passam a aparecer numa caixa da própria app (`<dialog>` nativo), com as cores do ambiente e botões com nome claro («Apagar», «Suspender»…), em vez da janela do navegador. Nas ações que apagam, o foco começa em «Cancelar»; Esc ou clicar fora cancela.
 

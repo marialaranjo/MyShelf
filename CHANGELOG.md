@@ -7,6 +7,9 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
 ## [Não lançado]
 
+### Confirmações com o aspeto da app
+- As perguntas «Tens a certeza?» passam a aparecer numa caixa da própria app (`<dialog>` nativo), com as cores do ambiente e botões com nome claro («Apagar», «Suspender»…), em vez da janela do navegador. Nas ações que apagam, o foco começa em «Cancelar»; Esc ou clicar fora cancela.
+
 ### Novo — editar desejos, prolongar empréstimos e aviso de atrasos
 - **Editar um desejo:** botão «Editar» em cada papel da Wishlist, com a ficha já preenchida (título, autor, ISBN, prioridade, link, notas).
 - **Prolongar um empréstimo:** botão «Prolongar» nos cartões de «Fora de casa» para escolher nova data de devolução (sugestão: +14 dias).

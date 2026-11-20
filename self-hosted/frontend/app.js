@@ -896,7 +896,7 @@ async function applyBulkLib(){
 }
 async function applyBulkDelete(){
   if(!bulkSelected.size) return;
-  if(!confirm(`Apagar ${bulkSelected.size} livro(s)? Não é possível desfazer.`)) return;
+  if(!await askConfirm(`Apagar ${bulkSelected.size} livro(s)? Não é possível desfazer.`,{ok:'Apagar',danger:true})) return;
   for(const id of bulkSelected) await DB.deleteBook(id);
   unsavedChanges=true; bulkMode=false; bulkSelected=new Set(); await loadAll(); buildShelves();
   showToast('Livros apagados');
@@ -1014,6 +1014,27 @@ function nameModal(){
   else { m.removeAttribute('aria-labelledby'); m.setAttribute('aria-label','Ficha do livro'); }
 }
 if($('modal-body')) new MutationObserver(nameModal).observe($('modal-body'),{childList:true});
+// Confirmação própria, com o aspeto da app (em vez da janela do navegador):
+// botões com nome claro; Esc ou clicar fora = Cancelar.
+function askConfirm(msg,{ok='Confirmar',danger=false}={}){
+  const d=$('confirm-dlg');
+  if(!d||typeof d.showModal!=='function') return Promise.resolve(window.confirm(msg));
+  const yes=$('confirm-yes'), no=$('confirm-no'), prev=document.activeElement;
+  $('confirm-msg').textContent=msg;
+  yes.textContent=ok; yes.className=danger?'btn-delete':'btn-edit';
+  return new Promise(res=>{
+    const done=v=>{
+      yes.onclick=no.onclick=d.onclick=d.oncancel=null;
+      if(d.open) d.close();
+      if(prev&&typeof prev.focus==='function') prev.focus();
+      res(v);
+    };
+    yes.onclick=()=>done(true); no.onclick=()=>done(false);
+    d.oncancel=e=>{ e.preventDefault(); done(false); };          // Esc
+    d.onclick=e=>{ if(e.target===d) done(false); };              // clique fora da caixa
+    d.showModal(); (danger?no:yes).focus();
+  });
+}
 function closeModal(){
   $('book-modal').classList.remove('open'); $('backdrop').classList.remove('open');
   document.body.style.overflow='';
@@ -1492,7 +1513,7 @@ async function createShareLink(){
   await DB.createShare(); await loadAll(); renderResumo(); showToast('Link criado');
 }
 async function revokeShareLink(id){
-  if(!confirm('Desativar o link? Quem o tiver deixa de conseguir ver a tua coleção.')) return;
+  if(!await askConfirm('Desativar o link? Quem o tiver deixa de conseguir ver a tua coleção.',{ok:'Desativar link',danger:true})) return;
   await DB.deleteShare(id); await loadAll(); renderResumo(); showToast('Link desativado');
 }
 function copyShareLink(){
@@ -1536,7 +1557,7 @@ function renderCollections(){
 async function deleteCollection(libId){
   const lib=STATE.libs.find(l=>l.id===libId); const n=STATE.books.filter(b=>b.library===libId).length;
   const msg=n?`Apagar «${lib?lib.name:'esta coleção'}»? Os ${n} ${n===1?'livro continua':'livros continuam'} na estante, mas ${n===1?'fica':'ficam'} sem coleção.`:`Apagar «${lib?lib.name:'esta coleção'}»?`;
-  if(!confirm(msg)) return;
+  if(!await askConfirm(msg,{ok:'Apagar',danger:true})) return;
   await DB.deleteLib(libId); unsavedChanges=true; await loadAll(); renderCollections(); showToast('Coleção apagada');
 }
 async function createCollection(){
@@ -1669,7 +1690,7 @@ async function advanceWish(id){
 }
 async function deleteWish(id){
   const w=STATE.wish.find(x=>x.id===id);
-  if(!confirm(`Apagar «${w&&w.title?w.title:'este desejo'}» da wishlist?`)) return;
+  if(!await askConfirm(`Apagar «${w&&w.title?w.title:'este desejo'}» da wishlist?`,{ok:'Apagar',danger:true})) return;
   await DB.deleteWish(id); unsavedChanges=true; await loadAll(); renderWishlist();
 }
 
@@ -2099,7 +2120,7 @@ function fmtTime(ms){ const s=Math.floor(ms/1000),m=Math.floor(s/60),h=Math.floo
 
 async function handleReadingBtn(bookId){
   if(readingState.active&&readingState.bookId===bookId){ openReadingPanel(); return; }
-  if(readingState.active){ if(!confirm('Tens uma sessão activa noutro livro. Terminar e começar esta?')) return; await stopReadingSession(true); }
+  if(readingState.active){ if(!await askConfirm('Tens uma sessão activa noutro livro. Terminar e começar esta?',{ok:'Terminar e começar'})) return; await stopReadingSession(true); }
   const b=byId(bookId); if(b) startReadingSession(b);
 }
 function startReadingSession(book){
@@ -2224,7 +2245,7 @@ async function handleJSONLoad(file){
     if(file.size>20*1024*1024){ showToast('Ficheiro demasiado grande (max 20 MB)'); return; }
     const data=JSON.parse(await file.text());
     if(!data.books){ showToast('Ficheiro inválido'); return; }
-    if(!confirm(`Carregar ${data.books.length} livros? Os dados actuais (locais) serão substituídos.`)) return;
+    if(!await askConfirm(`Carregar ${data.books.length} livros? Os dados actuais (locais) serão substituídos.`,{ok:'Substituir',danger:true})) return;
     localStorage.setItem('books',JSON.stringify(data.books||[]));
     localStorage.setItem('libs',JSON.stringify(data.libs||[]));
     localStorage.setItem('wish',JSON.stringify(data.wish||[]));
@@ -2345,14 +2366,14 @@ async function sendInvite(){
 async function toggleInvite(id){
   const inv=ADMIN.invites.find(i=>i.id===id); if(!inv) return;
   const suspended=!inv.suspended;
-  if(suspended&&!confirm(`Suspender ${inv.email}? Deixa de conseguir entrar (a sessão atual termina quando expirar).`)) return;
+  if(suspended&&!await askConfirm(`Suspender ${inv.email}? Deixa de conseguir entrar (a sessão atual termina quando expirar).`,{ok:'Suspender',danger:true})) return;
   if(usePocketBase){ try{ await PB.update('invites',id,{suspended}); }catch(e){ showToast('Não foi possível alterar'); return; } await loadAdminData(); }
   else { inv.suspended=suspended; renderAdmin(); }
   showToast(suspended?'Conta suspensa':'Conta reativada');
 }
 async function removeInvite(id){
   const inv=ADMIN.invites.find(i=>i.id===id); if(!inv) return;
-  if(!confirm(`Retirar o convite de ${inv.email}?`)) return;
+  if(!await askConfirm(`Retirar o convite de ${inv.email}?`,{ok:'Retirar convite',danger:true})) return;
   if(usePocketBase){ try{ await PB.remove('invites',id); }catch(e){ showToast('Não foi possível retirar'); return; } await loadAdminData(); }
   else { ADMIN.invites=ADMIN.invites.filter(i=>i.id!==id); renderAdmin(); }
   showToast('Convite retirado');
@@ -3480,7 +3501,7 @@ if(window.matchMedia) window.matchMedia('(min-width:900px)').addEventListener('c
   });
   document.addEventListener('keydown',e=>{
     if(e.target&&e.target.id==='scan-input'&&e.key==='Enter'){ e.preventDefault(); const v=e.target.value; e.target.value=''; if(v) procScan(v); return; }
-    if(e.key==='Escape'){ closeModal(); closeCameraScan(); }
+    if(e.key==='Escape'){ if($('confirm-dlg')?.open) return; closeModal(); closeCameraScan(); }
   });
   document.addEventListener('keydown',trapModalFocus,true);
   const jf=$('json-file-input');

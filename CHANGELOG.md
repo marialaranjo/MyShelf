@@ -7,6 +7,12 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
 ## [Não lançado]
 
+### Segurança — suspender uma conta passa a terminar a sessão
+- A suspensão só travava o login com Google: uma sessão já aberta continuava a funcionar, e com a renovação automática nunca expirava.
+- Novo hook `onRecordBeforeAuthRefreshRequest` em `pb_hooks/convites.pb.js`, com a mesma regra do login. Quem administra passa sempre; os outros precisam de convite não suspenso; o email é comparado sem distinguir maiúsculas. Numa instalação nova, sem admin, não bloqueia.
+- A app mostra a mensagem do servidor no ecrã de entrada (ex.: «Esta conta está suspensa. Fala com quem gere esta estante.»).
+- Testado num PocketBase 0.22.21 local: instalação nova → 200; admin → 200; convidada ativa → 200; suspensa → 403 (200 antes de suspender); sem convite → 403.
+
 ### Abre mais depressa e sem estante de exemplo em produção
 - Letras (DM Sans e Instrument Serif) servidas pelo próprio servidor a partir de `/fonts/` (woff2, SIL OFL 1.1). Deixa de haver pedidos ao Google Fonts, e a CSP fica `style-src 'self' 'unsafe-inline'` e `font-src 'self'`.
 - O modo de demonstração só funciona em `localhost` ou ficheiro local. Em produção, sem servidor, o ecrã de entrada diz «Não consegui ligar ao servidor…» e mostra o botão «Tentar outra vez».

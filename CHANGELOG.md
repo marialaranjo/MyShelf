@@ -13,7 +13,8 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 ### Capas na Wishlist e Resumo mais compacto no computador
 - Os desejos mostram a capa do livro; as que faltam são procuradas em segundo plano (Google Books → Open Library), só aceitando resultados com o mesmo título ou autor. «Editar desejo» ganhou «Procurar capa».
 - «Colar uma lista»: o hífen só separa título e autor com espaços dos dois lados.
-- nginx: `img-src` permite `archive.org` — as capas da Open Library redirecionam para lá e estavam a ser bloqueadas.
+- Comparar preços: atalhos «Wook», «Bertrand» e «Amazon» em cada desejo.
+- nginx: `img-src` passa a `'self' data: https:` — as capas da Open Library (que redirecionam para `archive.org`) estavam bloqueadas, e assim também funcionam capas coladas de lojas.
 - Resumo a partir de 1200 px: estatísticas em duas colunas e «Fora de casa» ao lado.
 
 ### Novo — editar desejos, prolongar empréstimos e aviso de atrasos

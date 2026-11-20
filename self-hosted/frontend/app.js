@@ -1594,6 +1594,7 @@ function renderWishlist(){
       <div class="wish-title">${escHtml(w.title||'')}</div>
       <div class="wish-author">${escHtml(w.author||'')}</div>
       <div class="wish-foot">${link}</div>
+      ${wishTab==='desejado'?compareLinksHtml(w):''}
       ${advance}
       <button type="button" class="col-link wish-edit" data-action="openWishEdit" data-id="${w.id}" aria-label="Editar ${escAttr(w.title||'este desejo')}">Editar</button>
       <button type="button" class="col-link col-del wish-del" data-action="deleteWish" data-id="${w.id}" aria-label="Apagar ${escAttr(w.title||'este desejo')}">Apagar</button>
@@ -1637,6 +1638,22 @@ function renderWishlist(){
 }
 function setWishTab(tab){ wishTab=tab; renderWishlist(); }
 
+// Atalhos para comparar preços: abrem a pesquisa de cada loja (pelo ISBN, se houver;
+// senão por título + autor). Nada é enviado a estas lojas a partir da app.
+function compareLinksHtml(w){
+  const isbn=(w.isbn||'').replace(/[^0-9X]/gi,'');
+  const q=isbn||[w.title,(w.author||'').split(',')[0]].filter(Boolean).join(' ').trim();
+  if(!q) return '';
+  const e=encodeURIComponent(q), plus=e.replace(/%20/g,'+');
+  const lojas=[
+    ['Wook',`https://www.wook.pt/pesquisa?keyword=${plus}`],
+    ['Bertrand',`https://www.bertrand.pt/pesquisa/${plus}`],
+    ['Amazon',`https://www.amazon.es/s?k=${plus}&i=stripbooks`],
+  ];
+  const t=escAttr(w.title||'este livro');
+  return `<div class="wish-compare"><span class="wish-compare-lbl">Comparar:</span>${lojas.map(([n,u])=>
+    `<a href="${escAttr(u)}" target="_blank" rel="noopener noreferrer" aria-label="Procurar ${t} na ${n} (abre noutro separador)">${n}</a>`).join('')}</div>`;
+}
 function wishCoverHtml(w,color){
   const ini=escHtml((w.title||'?').trim().charAt(0).toUpperCase());
   // Se a imagem falhar, o tratamento global de erros remove o <img> e fica a inicial.

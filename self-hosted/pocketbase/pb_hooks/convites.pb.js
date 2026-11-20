@@ -83,3 +83,38 @@ onRecordBeforeCreateRequest((e) => {
     throw new ForbiddenError("O registo só é possível com convite.");
   }
 }, "users");
+
+// Renovar a sessão (auth-refresh) segue a mesma regra do login: sem isto, uma
+// conta suspensa continuava a entrar, porque a app renova a sessão sozinha.
+// Quem administra passa sempre; os outros precisam de convite não suspenso.
+onRecordBeforeAuthRefreshRequest((e) => {
+  // instalação nova (ainda sem admin): não bloqueia
+  try {
+    if ($app.dao().findRecordsByFilter("admins", "id != ''", "", 1, 0).length === 0) return;
+  } catch (_) {}
+  if (e.record) {
+    try {
+      $app.dao().findFirstRecordByFilter("admins", "user = {:id}", { id: e.record.id });
+      return;
+    } catch (_) {}
+  }
+  let email = "";
+  try { email = String(e.record.email() || "").trim().toLowerCase(); } catch (_) {}
+  // Comparação sem maiúsculas/minúsculas: um convite antigo escrito com
+  // maiúsculas não deve terminar a sessão de quem já tinha entrado.
+  let convite = null;
+  if (email) {
+    try {
+      const todos = $app.dao().findRecordsByFilter("invites", "email != ''", "", 1000, 0);
+      for (const c of todos) {
+        if (String(c.getString("email")).trim().toLowerCase() === email) { convite = c; break; }
+      }
+    } catch (_) {}
+  }
+  if (!convite) {
+    throw new ForbiddenError("Esta conta já não tem convite. Fala com quem gere esta estante.");
+  }
+  if (convite.getBool("suspended")) {
+    throw new ForbiddenError("Esta conta está suspensa. Fala com quem gere esta estante.");
+  }
+}, "users");

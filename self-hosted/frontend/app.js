@@ -2458,7 +2458,7 @@ async function sendInvite(){
 async function toggleInvite(id){
   const inv=ADMIN.invites.find(i=>i.id===id); if(!inv) return;
   const suspended=!inv.suspended;
-  if(suspended&&!await askConfirm(`Suspender ${inv.email}? Deixa de conseguir entrar (a sessão atual termina quando expirar).`,{ok:'Suspender',danger:true})) return;
+  if(suspended&&!await askConfirm(`Suspender ${inv.email}? Deixa de conseguir entrar, e uma sessão já aberta termina na próxima verificação da app (ao reabri-la ou ao voltar ao separador).`,{ok:'Suspender',danger:true})) return;
   if(usePocketBase){ try{ await PB.update('invites',id,{suspended}); }catch(e){ showToast('Não foi possível alterar'); return; } await loadAdminData(); }
   else { inv.suspended=suspended; renderAdmin(); }
   showToast(suspended?'Conta suspensa':'Conta reativada');
@@ -2688,12 +2688,16 @@ async function handleOAuthCallback(){
 // ── Sessão: confirma e renova o token no PocketBase ───────────────────────
 // Um token expirado não dá erro nas listas (o PocketBase devolve-as vazias),
 // por isso sem isto a app mostrava a estante vazia sem explicar porquê.
-let lastSessionRefresh=0;
+let lastSessionRefresh=0, sessionEndReason='';
 async function refreshSession(){
   if(!AUTH.token) return false;
   try{
     const r=await fetch(`${PB_URL}/api/collections/users/auth-refresh`,{method:'POST',headers:AUTH.authHeader()});
-    if(r.status===401||r.status===403||r.status===404){ AUTH.clear(); return false; }
+    if(r.status===401||r.status===403||r.status===404){
+      // 403 = o servidor recusou (ex.: conta suspensa) → mostra a mensagem dele
+      if(r.status===403){ try{ const d=await r.json(); sessionEndReason=d&&d.message||''; }catch(_){} }
+      AUTH.clear(); return false;
+    }
     if(r.ok){
       const d=await r.json();
       if(d.token) AUTH.token=d.token;
@@ -2705,7 +2709,7 @@ async function refreshSession(){
 }
 function sessionExpired(){
   const n=$('login-note');
-  if(n){ n.textContent='A tua sessão terminou. Entra outra vez para continuar.'; n.hidden=false; }
+  if(n){ n.textContent=sessionEndReason||'A tua sessão terminou. Entra outra vez para continuar.'; n.hidden=false; }
   showLoginScreen();
 }
 // Com a app aberta: renova de 6 em 6 horas e quando voltas ao separador (se já passou 1 hora).

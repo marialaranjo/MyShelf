@@ -2620,9 +2620,25 @@ function setReaderChip(name){
   checkAdmin();
 }
 // Entrada principal do gate (botão "Entrar com Google")
+// Modo de demonstração (estante de exemplo guardada só no browser): só em
+// testes — ficheiro local ou localhost. No site a sério, se o servidor não
+// responder, a app diz isso em vez de mostrar livros falsos.
+const DEMO_OK = location.protocol==='file:' || /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname) || location.hostname.endsWith('.localhost');
+function showServerDown(){
+  const n=$('login-note');
+  if(n){ n.textContent='Não consegui ligar ao servidor. Os teus livros estão a salvo lá — tenta outra vez daqui a pouco.'; n.hidden=false; }
+  const btn=$('g-btn');
+  if(btn){ const t=btn.querySelector('span'); if(t) t.textContent='Tentar outra vez'; const g=btn.querySelector('.g-logo'); if(g) g.style.display='none'; }
+  showLoginScreen();
+}
 async function doLogin(e){
   if(e&&e.preventDefault) e.preventDefault();
   if(AUTH_REQUIRED&&usePocketBase){ return startGoogleLogin(); }
+  if(!DEMO_OK){
+    const n=$('login-note'); if(n){ n.textContent='A tentar ligar…'; n.hidden=false; }
+    if(await checkPB()){ location.reload(); return; }
+    return showServerDown();
+  }
   // modo offline / demonstração (file://): entra com perfil local
   await enterApp('Visitante');
 }
@@ -3643,8 +3659,9 @@ if(window.matchMedia) window.matchMedia('(min-width:900px)').addEventListener('c
     }
     showLoginScreen();   // espera pelo botão Google
   }else{
-    // offline / file:// — mostra o gate (botão entra em modo demonstração)
-    showLoginScreen();
+    // Sem servidor: em testes (localhost / file://) o botão entra em modo de
+    // demonstração; no site a sério mostra «Não consegui ligar ao servidor».
+    if(DEMO_OK) showLoginScreen(); else showServerDown();
   }
 })();
 

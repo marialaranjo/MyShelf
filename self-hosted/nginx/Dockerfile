@@ -16,6 +16,14 @@ RUN chmod +x /docker-entrypoint.sh
 # Frontend estático
 COPY frontend/ /usr/share/nginx/html/
 
+# Versão no endereço do app.js (impressão digital do conteúdo). Cada deploy com
+# app.js novo muda o endereço («/app.js?v=…»), por isso nenhum cache — browser,
+# CDN (ex.: Cloudflare, que pode reescrever o Cache-Control) ou service worker —
+# pode continuar a servir um app.js antigo. A build falha se a troca não acontecer.
+RUN v=$(md5sum /usr/share/nginx/html/app.js | cut -c1-10) \
+ && sed -i "s#src=\"/app.js\"#src=\"/app.js?v=${v}\"#" /usr/share/nginx/html/index.html \
+ && grep -q "src=\"/app.js?v=${v}\"" /usr/share/nginx/html/index.html
+
 EXPOSE 80
 
 # Healthcheck para o docker-compose

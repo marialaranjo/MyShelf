@@ -10,10 +10,11 @@
 #      da produção sem conflitos;
 #    - expõe a app em http://localhost:8080 e o painel em http://localhost:8090/_/
 #
-#  Uso (Windows — evita um erro do Docker Desktop com o "bake"):
+#  Uso (Windows): Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass ; .\scripts\local.ps1 iniciar
+#  ou à mão (evita um erro do Docker Desktop com o "bake"):
 #    docker build -t myshelf-local-pocketbase ./pocketbase
 #    docker build -t myshelf-local-nginx -f nginx/Dockerfile .
-#    docker compose -f docker-compose.local.yml up -d
+#    docker compose -f docker-compose.local.yml up -d --no-build
 #  Noutros sistemas basta: docker compose -f docker-compose.local.yml up -d --build
 #  Parar: docker compose -f docker-compose.local.yml down
 #  Apagar dados de teste: docker compose -f docker-compose.local.yml down -v

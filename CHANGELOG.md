@@ -7,6 +7,32 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
 ## [Não lançado]
 
+### Guardar sem rede em toda a app + cópia no browser separada por conta
+- Sem ligação, tudo o que mudas (livros, coleções, Wishlist, empréstimos) fica numa fila e é enviado quando a rede voltar. Antes, só os livros eram guardados assim.
+- A cópia guardada no browser passa a ser separada por conta (`biblio_off_<id>_…`), para duas pessoas no mesmo computador não verem a estante uma da outra. Ao sair, a cópia é apagada; se houver alterações por enviar, a app pergunta primeiro.
+- Um erro do servidor (ex.: 403) já não é confundido com falta de rede: aparece «Não foi guardado…».
+
+### Wishlist: selecionar vários desejos de uma vez
+- Botão «Selecionar» na Wishlist: escolhes vários desejos (Shift+clique escolhe um intervalo) e avanças, recuas, mudas a prioridade ou apagas todos de uma vez. Passar para «adicionado» cria os livros na estante, com confirmação.
+
+### Wishlist: separar título e autor
+- Ferramenta para desejos colados sem «—», em que o autor ficou colado ao título. Procura cada desejo no Google Books e na Open Library e propõe a separação; nada muda sem reveres e aceitares. Pode ser interrompida a meio.
+
+### Script das páginas: só a edição exata e só depois de revisto
+- `scripts/backfill-pages.mjs` passa a ler o nº de páginas da edição exata (`/isbn/<ISBN>.json`), em vez da mediana de todas as edições da obra.
+- Primeiro faz um ensaio e escreve um relatório CSV (gravar / rever / manual). Só depois, com `--aplicar=<relatório>`, grava as linhas «gravar», confirmando que o livro continua sem páginas. Os relatórios ficam fora do Git (`.gitignore`).
+
+### Limpeza e validação automática
+- Apagado `frontend/styles.css`, que não era usado (o CSS está no `index.html`).
+- `scripts/validate.js` reescrito: sintaxe de todo o JavaScript, regras da CSP no `index.html`, ficheiros pedidos que existem, passo da versão no Dockerfile do nginx, ausência de chaves Google, casos do script das páginas e BOM dos scripts PowerShell. Corre em cada PR (`.github/workflows/validar.yml`).
+- O service worker só guarda respostas certas e, sem rede, só devolve o `index.html` para navegações.
+
+### Testar no Windows com um só comando
+- Novo `self-hosted/scripts/local.ps1`: `iniciar`, `estado` (mostra também os containers parados), `registos`, `parar` e `apagar-dados`. Guia em `docs/testar-localmente.md`.
+
+### Ecrã de entrada: «Entrar com Google» deixa de falhar em silêncio
+- Se o login Google não estiver configurado no PocketBase, ou falhar, a mensagem aparece no ecrã de entrada (antes ficava por baixo do ecrã).
+
 ### Segurança — suspender uma conta passa a terminar a sessão
 - A suspensão só travava o login com Google: uma sessão já aberta continuava a funcionar, e com a renovação automática nunca expirava.
 - Novo hook `onRecordBeforeAuthRefreshRequest` em `pb_hooks/convites.pb.js`, com a mesma regra do login. Quem administra passa sempre; os outros precisam de convite não suspenso; o email é comparado sem distinguir maiúsculas. Numa instalação nova, sem admin, não bloqueia.

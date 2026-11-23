@@ -9,3 +9,6 @@ Dockerfile      text eol=lf
 *.yml           text eol=lf
 *.yaml          text eol=lf
  
+
+# Scripts do PowerShell: CRLF (o PowerShell 5.1 lida melhor) — o ficheiro tem BOM UTF-8 para os acentos.
+*.ps1           text eol=crlf

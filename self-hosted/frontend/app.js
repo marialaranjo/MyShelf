@@ -54,6 +54,17 @@ document.addEventListener('click', e => {
     // ID único
     case 'abrirEnriquecimento': return abrirEnriquecimento(id);
     case 'advanceWish': return advanceWish(id);
+    case 'toggleWishBulk': return toggleWishBulk();
+    case 'openWishSplit': return openWishSplit();
+    case 'startWishSplit': return startWishSplit();
+    case 'stopWishSplit': wishSplitStop=true; return;
+    case 'applyWishSplit': return applyWishSplit();
+    case 'wishSelectAll': return wishSelectAll();
+    case 'wishSelectNone': return wishSelectNone();
+    case 'wishBulkAdvance': return wishBulkAdvance();
+    case 'wishBulkBack': return wishBulkBack();
+    case 'wishBulkPrio': return wishBulkPrio();
+    case 'wishBulkDelete': return wishBulkDelete();
     case 'confirmDelete': return confirmDelete(id);
     case 'deleteCollection': return deleteCollection(id);
     case 'deleteWish': return deleteWish(id);
@@ -177,6 +188,7 @@ let bulkSelected = new Set();
 let currentView  = 'catalogo';
 let loanTab      = 'ativos';
 let wishTab      = 'desejado';
+let wishBulk=false, wishSel=new Set(), wishLastIdx=-1, wishBusy=false;   // seleção de vários desejos
 
 // ═══════════════════════════════════════════════════════════════════════════
 // DATA LAYER (PocketBase + fallback localStorage) — do repositório
@@ -205,7 +217,10 @@ const PB={
   async getAll(col){ const d=await PB.req('GET',`${col}/records?perPage=500&sort=-created`); return d.items||[]; },
   async create(col,data){ return PB.req('POST',`${col}/records`,data); },
   async update(col,id,data){ return PB.req('PATCH',`${col}/records/${id}`,data); },
-  async remove(col,id){ await fetch(`${PB_URL}/api/collections/${col}/records/${id}`,{method:'DELETE',headers:AUTH.authHeader(),signal:AbortSignal.timeout(8000)}); }
+  async remove(col,id){
+    const r=await fetch(`${PB_URL}/api/collections/${col}/records/${id}`,{method:'DELETE',headers:AUTH.authHeader(),signal:AbortSignal.timeout(8000)});
+    if(!r.ok&&r.status!==404) throw new Error(`PB ${r.status}`);   // 404 = já não existe
+  }
 };
 
 const LOCAL={
@@ -238,25 +253,48 @@ function withOwner(d){ return (usePocketBase && AUTH.user && AUTH.user.id) ? Obj
 // silêncio e a UI mostrava sempre "✓ adicionado", mesmo só a guardar local.
 let lastSaveRemote=true;
 
-// ── OFFLINE: cache de leitura + fila de sincronização (só para "books") ────
-// Âmbito reduzido a livros de propósito — é o caso de uso real (adicionar um
-// livro sem rede, ex. numa livraria). Coleções/wishlist/empréstimos continuam
-// só de leitura offline (o pedido cai para LOCAL como já acontecia).
-// "Rede indisponível" (guardar para sincronizar depois) é distinto de "o
-// PocketBase respondeu com erro" (validação/permissões — repetir não resolve):
-// PB.req lança Error('PB <status>') só no segundo caso.
+// ── OFFLINE: cache de leitura + fila de envio, por conta ──────────────────
+// Sem rede (ex.: numa livraria), as alterações a livros, desejos, empréstimos
+// e coleções ficam numa fila e são enviadas quando a rede voltar.
+// "Rede indisponível" (guardar para enviar depois) é distinto de "o PocketBase
+// respondeu com erro" (validação/permissões — repetir não resolve): PB.req
+// lança Error('PB <status>') só no segundo caso, e aí a app avisa que NÃO
+// guardou, em vez de fingir que guardou só neste browser.
+// Tudo o que fica no browser tem o id da conta no nome da chave: outra conta
+// no mesmo computador não vê esta cópia, e terminar a sessão apaga a cache.
 function isNetworkError(e){ return !(e && e.message && e.message.startsWith('PB ')); }
 function offRead(key){ try{ return JSON.parse(localStorage.getItem(key)||'[]'); }catch{ return []; } }
 function offWrite(key,v){ try{ localStorage.setItem(key,JSON.stringify(v)); }catch(e){ if(e.name==='QuotaExceededError') showToast('Armazenamento cheio'); } }
-const OFF_CACHE_KEY='biblio_offline_cache_books';
-const OFF_OUTBOX_KEY='biblio_offline_outbox_books';
+function offUid(){ return (AUTH.user&&AUTH.user.id)||'anon'; }
+function offKey(name){ return `biblio_off_${offUid()}_${name}`; }        // name: outbox | cache_<coleção>
 function isTempId(id){ return typeof id==='string' && id.startsWith('tmp_'); }
 function newTempId(){ return 'tmp_'+Date.now()+Math.random().toString(36).slice(2,8); }
-function outboxAdd(op){ const o=offRead(OFF_OUTBOX_KEY); o.push(op); offWrite(OFF_OUTBOX_KEY,o); }
-// Aplica a fila pendente sobre a última lista real conhecida, para a estante
+function outboxRead(){ return offRead(offKey('outbox')).map(op=>op.coll?op:Object.assign({coll:'books'},op)); }
+function outboxWrite(o){ offWrite(offKey('outbox'),o); }
+function outboxAdd(op){
+  const o=outboxRead(); o.push(op); outboxWrite(o);
+  showToast('Sem ligação: fica guardado neste dispositivo e é enviado quando a rede voltar');
+}
+function pendingCount(){ return outboxRead().length; }
+// Versões antigas guardavam tudo em chaves sem conta. A fila antiga passa para
+// a conta atual (foi criada neste browser); as caches antigas são apagadas.
+let offLegacyDone=false;
+function migrateLegacyOffline(){
+  if(offLegacyDone||!AUTH.user||!AUTH.user.id) return; offLegacyDone=true;
+  try{
+    const old=offRead('biblio_offline_outbox_books');
+    if(old.length) outboxWrite(outboxRead().concat(old.map(op=>Object.assign({coll:'books'},op))));
+    ['biblio_offline_outbox_books','biblio_offline_cache_books','biblio_offline_cache_libs','biblio_offline_cache_wish','biblio_offline_cache_loans']
+      .forEach(k=>localStorage.removeItem(k));
+  }catch(_){}
+}
+function clearOfflineCache(){
+  try{ const pre=`biblio_off_${offUid()}_cache_`; Object.keys(localStorage).filter(k=>k.startsWith(pre)).forEach(k=>localStorage.removeItem(k)); }catch(_){}
+}
+// Aplica a fila pendente sobre a última lista real conhecida, para o ecrã
 // mostrar sempre algo coerente (marcados com _pending, para a UI avisar).
-function mergeOffline(remoteList){
-  const outbox=offRead(OFF_OUTBOX_KEY);
+function mergeOffline(coll,remoteList){
+  const outbox=outboxRead().filter(op=>op.coll===coll);
   if(!outbox.length) return remoteList;
   let result=remoteList.slice();
   for(const op of outbox){
@@ -266,50 +304,81 @@ function mergeOffline(remoteList){
   }
   return result;
 }
+// Leitura: servidor → guarda cópia; sem rede → última cópia desta conta.
+async function readColl(coll){
+  migrateLegacyOffline();
+  try{
+    const remote=await PB.getAll(coll);
+    offWrite(offKey('cache_'+coll),remote);
+    syncOfflineOutbox(); // não bloqueia a leitura; refresca o ecrã sozinho se enviar algo
+    return mergeOffline(coll,remote);
+  }catch(e){
+    if(!isNetworkError(e)) console.warn('[DB] leitura de '+coll+' recusada pelo servidor:',e);
+    return mergeOffline(coll,offRead(offKey('cache_'+coll)));
+  }
+}
+// Escrita: servidor; sem rede → fila; erro do servidor → avisa e não guarda.
+function notSaved(e){ showToast('Não foi guardado: o servidor recusou ('+String(e&&e.message||'erro').replace('PB ','erro ')+'). Tenta outra vez.'); }
+async function createIn(coll,data){
+  try{ const r=await PB.create(coll,data); lastSaveRemote=true; return r; }
+  catch(e){
+    if(isNetworkError(e)){ lastSaveRemote=false; const tempId=newTempId(); outboxAdd({coll,type:'add',tempId,data}); return Object.assign({},data,{id:tempId,_pending:true}); }
+    notSaved(e); throw e;
+  }
+}
+async function updateIn(coll,id,d){
+  if(isTempId(id)){
+    // Ainda não existe no servidor: atualiza a própria operação 'add' pendente.
+    outboxWrite(outboxRead().map(op=>(op.type==='add'&&op.tempId===id)?Object.assign({},op,{data:Object.assign({},op.data,d)}):op));
+    return;
+  }
+  try{ return await PB.update(coll,id,d); }
+  catch(e){ if(isNetworkError(e)){ outboxAdd({coll,type:'update',targetId:id,data:d}); return; } notSaved(e); throw e; }
+}
+async function removeIn(coll,id){
+  if(isTempId(id)){ outboxWrite(outboxRead().filter(op=>!(op.type==='add'&&op.tempId===id))); return; }
+  try{ await PB.remove(coll,id); }
+  catch(e){ if(isNetworkError(e)){ outboxAdd({coll,type:'delete',targetId:id}); return; } notSaved(e); throw e; }
+}
 let offlineSyncing=false;
 async function syncOfflineOutbox(){
-  if(!usePocketBase || offlineSyncing) return;
-  const outbox=offRead(OFF_OUTBOX_KEY);
+  if(!usePocketBase || offlineSyncing || !AUTH.user) return;
+  const outbox=outboxRead();
   if(!outbox.length) return;
   offlineSyncing=true;
-  const remaining=[]; let synced=0;
+  const remaining=[], idMap={}; let synced=0, refused=0;
+  // Um empréstimo feito sem rede pode apontar para um livro também criado sem
+  // rede: o id provisório é trocado pelo id real assim que o livro é criado.
+  const fix=v=>(typeof v==='string'&&idMap[v])?idMap[v]:v;
+  const fixData=d=>{ const o={}; for(const k in d) o[k]=fix(d[k]); return o; };
   for(const op of outbox){
+    if(remaining.length&&op.type!=='add'&&remaining.some(r=>r.tempId&&(r.tempId===op.targetId))){ remaining.push(op); continue; }
     try{
-      if(op.type==='add') await PB.create('books',op.data);
-      else if(op.type==='update') await PB.update('books',op.targetId,op.data);
-      else if(op.type==='delete') await PB.remove('books',op.targetId);
+      if(op.type==='add'){ const r=await PB.create(op.coll,fixData(op.data)); idMap[op.tempId]=r.id; }
+      else if(op.type==='update') await PB.update(op.coll,fix(op.targetId),fixData(op.data));
+      else if(op.type==='delete') await PB.remove(op.coll,fix(op.targetId));
       synced++;
     }catch(e){
       if(isNetworkError(e)) remaining.push(op); // continua sem rede, tenta depois
-      // erro de validação/permissão: descarta — repetir não ia resolver.
+      else refused++;                           // validação/permissão: repetir não resolve
     }
   }
-  offWrite(OFF_OUTBOX_KEY,remaining);
+  outboxWrite(remaining);
   offlineSyncing=false;
+  if(refused) showToast(refused===1?'1 alteração feita sem rede não foi aceite pelo servidor':refused+' alterações feitas sem rede não foram aceites pelo servidor');
   if(synced){
-    showToast(synced===1?'1 livro sincronizado com o servidor':synced+' livros sincronizados com o servidor');
-    unsavedChanges=true; await loadAll(); if(currentView==='catalogo') buildShelves();
+    showToast(synced===1?'1 alteração enviada para o servidor':synced+' alterações enviadas para o servidor');
+    unsavedChanges=true; await loadAll();
+    if(currentView==='catalogo') buildShelves(); else if(currentView==='wishlist') renderWishlist(); else if(currentView==='stats') renderResumo(); else if(currentView==='colecoes') renderCollections();
   }
 }
 window.addEventListener('online', ()=>{ syncOfflineOutbox(); });
 
 const DB={
-  async getBooks(){
-    if(usePocketBase){
-      try{
-        const remote=await PB.getAll('books');
-        offWrite(OFF_CACHE_KEY,remote);
-        syncOfflineOutbox(); // não bloqueia a leitura; refresca a estante sozinho se sincronizar algo
-        return mergeOffline(remote);
-      }catch{ return mergeOffline(offRead(OFF_CACHE_KEY)); }
-    }
-    return LOCAL.getBooks();
-  },
-  // Coleções/wishlist/empréstimos: só cache de leitura offline (sem fila de
-  // escrita — editar isto sem rede continua a cair no LOCAL como antes).
-  async getLibs(){  if(usePocketBase){try{const r=await PB.getAll('libraries');offWrite('biblio_offline_cache_libs',r);return r;}catch{return offRead('biblio_offline_cache_libs');}} return LOCAL.getLibs(); },
-  async getWish(){  if(usePocketBase){try{const r=await PB.getAll('wishlist');offWrite('biblio_offline_cache_wish',r);return r;}catch{return offRead('biblio_offline_cache_wish');}} return LOCAL.getWish(); },
-  async getLoans(){ if(usePocketBase){try{const r=await PB.getAll('loans');offWrite('biblio_offline_cache_loans',r);return r;}catch{return offRead('biblio_offline_cache_loans');}} return LOCAL.getLoans(); },
+  async getBooks(){ return usePocketBase ? readColl('books')     : LOCAL.getBooks(); },
+  async getLibs(){  return usePocketBase ? readColl('libraries') : LOCAL.getLibs(); },
+  async getWish(){  return usePocketBase ? readColl('wishlist')  : LOCAL.getWish(); },
+  async getLoans(){ return usePocketBase ? readColl('loans')     : LOCAL.getLoans(); },
   async addBook(d){
     const data={quantity:1,...d}; // "quantity" é obrigatório no PocketBase (migração add_quantity) — sem isto o create falhava sempre
     // Já tens este ISBN (mesmo pendente de sincronizar)? Soma à quantidade em vez de duplicar.
@@ -321,21 +390,7 @@ const DB={
         return Object.assign({},dup,{quantity,_merged:true});
       }
     }
-    if(usePocketBase){
-      const owned=withOwner(data);
-      try{ const r=await PB.create('books',owned); lastSaveRemote=true; return r; }
-      catch(e){
-        if(isNetworkError(e)){
-          // Sem rede (não é erro de validação): fica na fila, sincroniza quando voltar a rede.
-          lastSaveRemote=false;
-          const tempId=newTempId();
-          outboxAdd({type:'add',tempId,data:owned});
-          return Object.assign({},owned,{id:tempId,_pending:true});
-        }
-        console.warn('[DB] addBook falhou no PocketBase, a guardar só localmente:',e);
-        lastSaveRemote=false; return LOCAL.addBook(data);
-      }
-    }
+    if(usePocketBase) return createIn('books',withOwner(data));
     lastSaveRemote=false; return LOCAL.addBook(data);
   },
   async updateBook(id,d){
@@ -345,47 +400,18 @@ const DB={
       const cur=byId(id);
       if(!cur||(cur.status!=='lido'&&!cur.finishedAt)) d=Object.assign({},d,{finishedAt:new Date().toISOString()});
     }
-    if(isTempId(id)){
-      // Ainda não existe no servidor: atualiza a própria operação 'add' pendente.
-      const o=offRead(OFF_OUTBOX_KEY).map(op=>(op.type==='add'&&op.tempId===id)?Object.assign({},op,{data:Object.assign({},op.data,d)}):op);
-      offWrite(OFF_OUTBOX_KEY,o);
-      return;
-    }
-    if(usePocketBase){
-      try{ return await PB.update('books',id,d); }
-      catch(e){
-        if(isNetworkError(e)){ outboxAdd({type:'update',targetId:id,data:d}); return; }
-        return LOCAL.updateBook(id,d);
-      }
-    }
+    if(usePocketBase) return updateIn('books',id,d);
     return LOCAL.updateBook(id,d);
   },
-  async deleteBook(id){
-    if(isTempId(id)){
-      offWrite(OFF_OUTBOX_KEY, offRead(OFF_OUTBOX_KEY).filter(op=>!(op.type==='add'&&op.tempId===id)));
-      return;
-    }
-    if(usePocketBase){
-      try{ await PB.remove('books',id); return; }
-      catch(e){ if(isNetworkError(e)){ outboxAdd({type:'delete',targetId:id}); return; } }
-      return;
-    }
-    LOCAL.deleteBook(id);
-  },
-  async addLib(d){ if(usePocketBase){try{return await PB.create('libraries',withOwner(d));}catch{return LOCAL.addLib(d);}} return LOCAL.addLib(d); },
-  async updateLib(id,d){ if(usePocketBase){try{return await PB.update('libraries',id,d);}catch{return LOCAL.updateLib(id,d);}} return LOCAL.updateLib(id,d); },
-  async deleteLib(id){ if(usePocketBase){try{await PB.remove('libraries',id);return;}catch{}} LOCAL.deleteLib(id); },
-  async addWish(d){
-    if(usePocketBase){
-      try{ const r=await PB.create('wishlist',withOwner(d)); lastSaveRemote=true; return r; }
-      catch(e){ console.warn('[DB] addWish falhou no PocketBase, a guardar só localmente:',e); lastSaveRemote=false; return LOCAL.addWish(d); }
-    }
-    lastSaveRemote=false; return LOCAL.addWish(d);
-  },
-  async updateWish(id,d){ if(usePocketBase){try{return await PB.update('wishlist',id,d);}catch{return LOCAL.updateWish(id,d);}} return LOCAL.updateWish(id,d); },
-  async deleteWish(id){ if(usePocketBase){try{await PB.remove('wishlist',id);return;}catch{}} LOCAL.deleteWish(id); },
-  async addLoan(d){ if(usePocketBase){try{return await PB.create('loans',withOwner(d));}catch{return LOCAL.addLoan(d);}} return LOCAL.addLoan(d); },
-  async updateLoan(id,d){ if(usePocketBase){try{return await PB.update('loans',id,d);}catch{return LOCAL.updateLoan(id,d);}} return LOCAL.updateLoan(id,d); },
+  async deleteBook(id){ if(usePocketBase) return removeIn('books',id); LOCAL.deleteBook(id); },
+  async addLib(d){      if(usePocketBase) return createIn('libraries',withOwner(d)); return LOCAL.addLib(d); },
+  async updateLib(id,d){ if(usePocketBase) return updateIn('libraries',id,d); return LOCAL.updateLib(id,d); },
+  async deleteLib(id){   if(usePocketBase) return removeIn('libraries',id); LOCAL.deleteLib(id); },
+  async addWish(d){      if(usePocketBase) return createIn('wishlist',withOwner(d)); lastSaveRemote=false; return LOCAL.addWish(d); },
+  async updateWish(id,d){ if(usePocketBase) return updateIn('wishlist',id,d); return LOCAL.updateWish(id,d); },
+  async deleteWish(id){  if(usePocketBase) return removeIn('wishlist',id); LOCAL.deleteWish(id); },
+  async addLoan(d){      if(usePocketBase) return createIn('loans',withOwner(d)); return LOCAL.addLoan(d); },
+  async updateLoan(id,d){ if(usePocketBase) return updateIn('loans',id,d); return LOCAL.updateLoan(id,d); },
   // Link público de partilha da coleção (só existe com PocketBase — não faz
   // sentido em modo local/demo, não há servidor para responder ao link).
   async getMyShare(){ if(!usePocketBase) return null; try{ const l=await PB.getAll('shares'); return l[0]||null; }catch{ return null; } },
@@ -611,7 +637,7 @@ function showToast(msg){
 
 // Toast usado depois de um addBook/addWish — avisa quando a gravação caiu
 // para o fallback local (usePocketBase=true não garante que o create passou).
-function saveToast(msg,merged){ if(merged) msg='Já tinhas este livro — quantidade aumentada'; showToast(lastSaveRemote?msg:msg+' ⚠️ só local (falhou no servidor)'); }
+function saveToast(msg,merged){ if(merged) msg='Já tinhas este livro — quantidade aumentada'; showToast(lastSaveRemote||!usePocketBase?msg:msg+' — sem ligação: é enviado quando a rede voltar'); }
 
 // ── MAPEAMENTO repo→preview ────────────────────────────────────────────────
 const COVER_COLORS=['navy','brown','terra','gold','burg','slate','moss','rust','plum','olive','teal','forest','steel','wine','indigo','rose','sage'];
@@ -1580,8 +1606,17 @@ function renderWishlist(){
   }</div></div>`;
   const filtered=STATE.wish.filter(w=>(w.status||'desejado')===wishTab);
   const stateMeta={ desejado:{next:'comprado',nextLabel:'Marcar como comprado'}, comprado:{next:'adicionado',nextLabel:'Arrumar na estante'}, adicionado:{next:null,nextLabel:null} };
-  const cards=filtered.map(w=>{
+  const cards=filtered.map((w,idx)=>{
     const color=colorFor(w);
+    if(wishBulk){
+      const on=wishSel.has(w.id);
+      return `<label class="note note-wish wish-pick${on?' is-selected':''}" style="width:222px" data-wish-id="${w.id}">
+        <input type="checkbox" class="wish-check" data-wish-sel="${w.id}" data-idx="${idx}" ${on?'checked':''} aria-label="Selecionar ${escAttr(w.title||'este desejo')}">
+        ${wishCoverHtml(w,color)}
+        <div class="wish-title">${escHtml(w.title||'')}</div>
+        <div class="wish-author">${escHtml(w.author||'')}</div>
+      </label>`;
+    }
     const m=stateMeta[wishTab];
     const advance=m.next
       ? `<button class="wish-advance" type="button" data-action="advanceWish" data-id="${w.id}">${m.nextLabel}</button>`
@@ -1621,7 +1656,7 @@ function renderWishlist(){
   $('main').innerHTML=`<section class="board-view">
     <div class="board-head">
       <div class="wish-head-row"><div><div class="board-kicker">Para um dia destes</div><h1 class="board-title">Wishlist</h1></div>
-        <div class="wish-head-actions"><button type="button" class="col-link" data-action="toggleWishImport">Colar uma lista</button>
+        <div class="wish-head-actions">${filtered.length?`<button type="button" class="bulk-toggle wish-bulk-toggle" data-action="toggleWishBulk" aria-pressed="${wishBulk}">${wishBulk?'Terminar seleção':'Selecionar vários'}</button>`:''}${filtered.length&&wishTab!=='adicionado'&&!wishBulk?'<button type="button" class="col-link" data-action="openWishSplit">Separar título e autor</button>':''}<button type="button" class="col-link" data-action="toggleWishImport">Colar uma lista</button>
         <button type="button" class="wish-add-toggle" data-action="toggleWishForm">+ Adicionar</button></div>
       </div>
       <p class="board-sub">${subs[wishTab]}</p>
@@ -1633,10 +1668,212 @@ function renderWishlist(){
       <div id="wish-import-status" class="isbn-status" role="status" aria-live="polite" style="margin-top:8px"></div>
       <button type="button" id="wish-import-btn" class="scan-connect" style="border-radius:var(--radius);margin-top:10px;width:100%;justify-content:center" data-action="runWishImport">Importar para a wishlist</button>
     </div>
-    ${subnav}<div class="board"><div class="pin-board">${body}</div></div></section>`;
+    ${subnav}<div class="board"><div class="pin-board">${body}</div></div>${wishBulk&&filtered.length?wishBulkBarHtml(filtered.length):''}</section>`;
   fillWishCovers();
 }
-function setWishTab(tab){ wishTab=tab; renderWishlist(); }
+function setWishTab(tab){ wishTab=tab; wishSel=new Set(); wishLastIdx=-1; renderWishlist(); }
+
+// ── Separar título e autor nos desejos ────────────────────────────────────
+// Listas coladas sem «—» ficaram com o autor colado ao título («A Biblioteca
+// da Meia-Noite Matt Haig») ou com outro texto no campo do autor («Yellowface
+// R.F. Kuang»). Para cada desejo, procura no Google Books e depois na Open
+// Library; só propõe separar quando o NOME de um autor encontrado aparece no
+// fim do texto e o resto bate com o título encontrado. Nada muda sem revisão.
+let wishSplitStop=false, wishSplitProps=[];
+const compactName=s=>normTitle(s).replace(/\s+/g,'');
+function titleSimilar(a,b){
+  const x=normTitle(a), y=normTitle(b); if(!x||!y) return false;
+  if(x===y||x.startsWith(y+' ')||y.startsWith(x+' ')) return true;
+  const wa=x.split(' ').filter(w=>w.length>=3), wb=new Set(y.split(' ').filter(w=>w.length>=3));
+  if(!wa.length||!wb.size) return false;
+  return wa.filter(w=>wb.has(w)).length/Math.min(wa.length,wb.size)>=0.6;
+}
+// Puro (sem rede): dado um desejo e resultados {title, authors[]}, devolve a proposta ou null.
+function proposeWishSplit(w,results,source){
+  const T=String(w.title||'').trim(), A=String(w.author||'').trim();
+  const toks=(T+' '+A).trim().split(/\s+/).filter(Boolean);
+  for(const r of results){
+    for(const N of (r.authors||[])){
+      const cN=compactName(N); if(cN.length<4) continue;
+      for(let k=1;k<=Math.min(6,toks.length-1);k++){
+        if(compactName(toks.slice(-k).join(' '))!==cN) continue;
+        const titleToks=toks.slice(0,-k), titlePart=titleToks.join(' ');
+        if(!titleSimilar(titlePart,r.title)) continue;
+        let title=titlePart, extra='';
+        const nt=normTitle(titlePart), nr=normTitle(r.title);
+        if(nt!==nr&&nt.startsWith(nr+' ')){
+          // há palavras a mais depois do título encontrado (ex.: título original no campo do autor)
+          for(let j=1;j<titleToks.length;j++){
+            if(normTitle(titleToks.slice(0,j).join(' '))===nr){ title=titleToks.slice(0,j).join(' '); extra=titleToks.slice(j).join(' '); break; }
+          }
+        }
+        const author=toks.slice(-k).join(' ');
+        if(title===T&&author===A&&!extra) return null;            // já está certo
+        return { id:w.id, before:{title:T,author:A}, after:{title,author,extra}, source, match:`${r.title} — ${N}` };
+      }
+    }
+  }
+  return null;
+}
+async function lookupForSplit(q){
+  const out=[];
+  try{
+    const r=await fetch(`/api/google-books?q=${encodeURIComponent(q)}&maxResults=8`,{headers:AUTH.authHeader()});
+    if(r.ok){ const d=await r.json(); for(const it of (d.items||[])){ const v=it.volumeInfo||{}; out.push({src:'Google Books',title:v.title||'',authors:v.authors||[]}); } }
+  }catch(_){}
+  try{
+    const r=await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=8&fields=title,author_name`);
+    if(r.ok){ const d=await r.json(); for(const doc of (d.docs||[])) out.push({src:'Open Library',title:doc.title||'',authors:doc.author_name||[]}); }
+  }catch(_){}
+  return out;
+}
+function wishSplitChecked(){ try{ return new Set(JSON.parse(localStorage.getItem(offKey('wishsplit_ok'))||'[]')); }catch{ return new Set(); } }
+function markWishSplitChecked(ids){ try{ const s=wishSplitChecked(); ids.forEach(i=>s.add(i)); localStorage.setItem(offKey('wishsplit_ok'),JSON.stringify([...s].slice(-3000))); }catch{} }
+function wishSplitCandidates(){
+  const ok=wishSplitChecked();
+  return STATE.wish.filter(w=>['desejado','comprado'].includes(w.status||'desejado')&&w.title&&!ok.has(w.id));
+}
+function openWishSplit(){
+  const c=wishSplitCandidates(), total=STATE.wish.filter(w=>['desejado','comprado'].includes(w.status||'desejado')).length;
+  openSheet(`
+    <div class="edit-head">Separar título e autor</div>
+    <p class="split-intro">Procuro cada desejo no Google Books e na Open Library. Só proponho uma mudança quando o nome de um autor encontrado aparece no fim do texto e o resto corresponde ao título. <strong>Nada muda sem confirmares.</strong></p>
+    <p class="split-intro">${c.length?`${c.length} ${c.length===1?'desejo para analisar':'desejos para analisar'}${total>c.length?` (${total-c.length} já vistos antes, salto-os)`:''}. Demora cerca de ${Math.max(1,Math.round(c.length*0.6/60))} min.`:'Já analisei todos os desejos.'}</p>
+    <div id="split-body"></div>
+    <div class="edit-actions">
+      ${c.length?'<button type="button" class="btn-edit" id="split-go" data-action="startWishSplit">Começar</button>':''}
+      <button type="button" class="btn-lend" data-action="closeModal">Fechar</button>
+    </div>`, c.length?'split-go':null);
+}
+async function startWishSplit(){
+  const c=wishSplitCandidates(); wishSplitStop=false; wishSplitProps=[];
+  const semNada=[];
+  const go=$('split-go'); if(go) go.remove();
+  const body=$('split-body');
+  body.innerHTML=`<p class="split-progress" id="split-progress" role="status" aria-live="polite">A analisar…</p><button type="button" class="btn-lend" data-action="stopWishSplit">Parar e ver o que já encontrei</button>`;
+  for(let i=0;i<c.length&&!wishSplitStop;i++){
+    const w=c[i];
+    const res=await lookupForSplit(`${w.title||''} ${w.author||''}`.trim());
+    const prop=proposeWishSplit(w,res.filter(r=>r.src==='Google Books'),'Google Books')||proposeWishSplit(w,res.filter(r=>r.src==='Open Library'),'Open Library');
+    if(prop) wishSplitProps.push(prop); else semNada.push(w.id);
+    const pr=$('split-progress'); if(pr) pr.textContent=`A analisar ${i+1} de ${c.length}… ${wishSplitProps.length} ${wishSplitProps.length===1?'proposta':'propostas'}`;
+    if(!$('split-body')) return;   // a ficha foi fechada
+  }
+  markWishSplitChecked(semNada);
+  renderWishSplitResults();
+}
+function renderWishSplitResults(){
+  const body=$('split-body'); if(!body) return;
+  if(!wishSplitProps.length){ body.innerHTML='<p class="split-progress" role="status">Não encontrei nada para corrigir.</p>'; return; }
+  const linha=(p,i)=>`<label class="split-item"><input type="checkbox" class="split-check" data-i="${i}" checked>
+      <span><span class="split-before">${escHtml(p.before.title)}${p.before.author?` <em>— ${escHtml(p.before.author)}</em>`:' <em>— sem autor</em>'}</span>
+      <span class="split-after">${escHtml(p.after.title)} <em>— ${escHtml(p.after.author)}</em></span>
+      ${p.after.extra?`<span class="split-note">«${escHtml(p.after.extra)}» passa para as notas</span>`:''}
+      <span class="split-src">Encontrado em ${escHtml(p.source)}: ${escHtml(p.match)}</span></span></label>`;
+  body.innerHTML=`<p class="split-progress" role="status">${wishSplitProps.length} ${wishSplitProps.length===1?'proposta':'propostas'}. Tira o visto às que não estiverem certas.</p>
+    <div class="split-list">${wishSplitProps.map(linha).join('')}</div>
+    <button type="button" class="btn-edit split-apply" data-action="applyWishSplit">Aplicar as marcadas</button>`;
+}
+async function applyWishSplit(){
+  const marcadas=[...document.querySelectorAll('.split-check')].filter(c=>c.checked).map(c=>wishSplitProps[Number(c.dataset.i)]);
+  const todas=wishSplitProps.map(p=>p.id);
+  if(!marcadas.length){ markWishSplitChecked(todas); closeModal(); return; }
+  let feitos=0, falhas=0;
+  for(const p of marcadas){
+    const w=STATE.wish.find(x=>x.id===p.id); if(!w){ falhas++; continue; }
+    const notes=p.after.extra?[w.notes,`${p.after.extra} (estava junto ao título/autor)`].filter(Boolean).join('\n'):w.notes;
+    try{ await DB.updateWish(p.id,{title:p.after.title,author:p.after.author,...(p.after.extra?{notes}:{})}); feitos++; }catch(_){ falhas++; }
+    const b=document.querySelector('.split-apply'); if(b) b.textContent=`A aplicar… ${feitos+falhas} de ${marcadas.length}`;
+  }
+  markWishSplitChecked(todas);
+  unsavedChanges=true; await loadAll(); closeModal(); renderWishlist();
+  showToast(falhas?`${feitos} corrigidos, ${falhas} falharam`:`${feitos} ${feitos===1?'desejo corrigido':'desejos corrigidos'}`);
+}
+
+// ── Selecionar vários desejos ─────────────────────────────────────────────
+// Carregar numa nota marca/desmarca; com Shift marca o intervalo desde a última.
+function wishBulkBarHtml(total){
+  const n=wishSel.size, dis=n&&!wishBusy?'':'disabled';
+  const acoes={
+    desejado:`<button type="button" data-action="wishBulkAdvance" ${dis}>Marcar como comprados</button>
+      <select id="wish-bulk-prio" aria-label="Prioridade" ${dis}><option value="">Prioridade…</option><option value="alta">Alta</option><option value="media">Média</option><option value="baixa">Baixa</option><option value="-">Sem prioridade</option></select>
+      <button type="button" data-action="wishBulkPrio" ${dis}>Aplicar</button>`,
+    comprado:`<button type="button" data-action="wishBulkAdvance" ${dis}>Arrumar na estante</button>
+      <button type="button" data-action="wishBulkBack" ${dis}>Voltar a desejados</button>`,
+    adicionado:'',
+  }[wishTab];
+  return `<div class="bulk-bar" id="wish-bulk-bar" role="region" aria-label="Ações para os desejos selecionados">
+    <span class="bulk-count" id="wish-bulk-count" role="status" aria-live="polite">${n} de ${total} selecionado${n===1?'':'s'}</span>
+    <button type="button" data-action="wishSelectAll" ${wishBusy?'disabled':''}>Selecionar todos</button>
+    <button type="button" data-action="wishSelectNone" ${n&&!wishBusy?'':'disabled'}>Limpar</button>
+    ${acoes}
+    <button type="button" class="danger" data-action="wishBulkDelete" ${dis}>Apagar</button>
+  </div>`;
+}
+function wishTabItems(){ return STATE.wish.filter(w=>(w.status||'desejado')===wishTab); }
+function refreshWishBulk(){
+  document.querySelectorAll('.wish-pick').forEach(el=>{
+    const on=wishSel.has(el.dataset.wishId); el.classList.toggle('is-selected',on);
+    const cb=el.querySelector('.wish-check'); if(cb) cb.checked=on;
+  });
+  const bar=$('wish-bulk-bar'); if(bar) bar.outerHTML=wishBulkBarHtml(wishTabItems().length);
+}
+function toggleWishBulk(){ wishBulk=!wishBulk; wishSel=new Set(); wishLastIdx=-1; renderWishlist(); }
+function wishSelectAll(){ wishTabItems().forEach(w=>wishSel.add(w.id)); refreshWishBulk(); }
+function wishSelectNone(){ wishSel=new Set(); wishLastIdx=-1; refreshWishBulk(); }
+function wishPick(idx,checked,range){
+  const items=wishTabItems();
+  if(range&&wishLastIdx>=0&&wishLastIdx!==idx){
+    const [a,b]=wishLastIdx<idx?[wishLastIdx,idx]:[idx,wishLastIdx];
+    items.slice(a,b+1).forEach(w=>{ if(checked) wishSel.add(w.id); else wishSel.delete(w.id); });
+  } else if(items[idx]){ if(checked) wishSel.add(items[idx].id); else wishSel.delete(items[idx].id); }
+  wishLastIdx=idx; refreshWishBulk();
+}
+// Shift + clique numa nota: o browser não passa esse clique à caixa (seleciona
+// texto), por isso o intervalo é tratado aqui.
+document.addEventListener('click',e=>{
+  const card=e.target.closest&&e.target.closest('.wish-pick'); if(!card||!e.shiftKey) return;
+  e.preventDefault();
+  const cb=card.querySelector('.wish-check'); if(!cb) return;
+  wishPick(Number(cb.dataset.idx),true,true);
+},true);
+document.addEventListener('change',e=>{
+  const cb=e.target.closest&&e.target.closest('.wish-check'); if(!cb) return;
+  wishPick(Number(cb.dataset.idx),cb.checked,false);
+});
+// Corre uma ação sobre os selecionados, um de cada vez, com contagem visível.
+async function runWishBulk(verbo,fn){
+  const ids=[...wishSel]; if(!ids.length||wishBusy) return;
+  wishBusy=true; refreshWishBulk();
+  let feitos=0, falhas=0;
+  for(const id of ids){
+    const w=STATE.wish.find(x=>x.id===id);
+    try{ if(w) await fn(w); feitos++; }catch(_){ falhas++; }
+    const c=$('wish-bulk-count'); if(c) c.textContent=`${verbo}… ${feitos+falhas} de ${ids.length}`;
+  }
+  wishBusy=false; wishSel=new Set(); wishLastIdx=-1; unsavedChanges=true;
+  await loadAll(); renderWishlist();
+  showToast(falhas?`${feitos} feitos, ${falhas} falharam`:`${feitos} ${feitos===1?'desejo atualizado':'desejos atualizados'}`);
+}
+async function wishBulkAdvance(){
+  if(wishTab==='comprado'&&!await askConfirm(`Arrumar ${wishSel.size} ${wishSel.size===1?'livro':'livros'} na estante? Cada um passa a ser um livro do Catálogo.`,{ok:'Arrumar na estante'})) return;
+  const libId=STATE.libs[0]?.id||'';
+  await runWishBulk(wishTab==='comprado'?'A arrumar':'A marcar', async w=>{
+    const next={desejado:'comprado',comprado:'adicionado'}[w.status||'desejado']; if(!next) return;
+    if(next==='adicionado') await DB.addBook({ title:w.title, author:w.author||'', cover:w.cover||'', isbn:w.isbn||'', library:libId, status:'nao-lido', added:new Date().toISOString() });
+    await DB.updateWish(w.id,{status:next});
+  });
+}
+async function wishBulkBack(){ await runWishBulk('A mover', w=>DB.updateWish(w.id,{status:'desejado'})); }
+async function wishBulkPrio(){
+  const v=$('wish-bulk-prio')?.value; if(!v) return;
+  await runWishBulk('A mudar', w=>DB.updateWish(w.id,{priority:v==='-'?'':v}));
+}
+async function wishBulkDelete(){
+  const n=wishSel.size; if(!n) return;
+  if(!await askConfirm(`Apagar ${n} ${n===1?'desejo':'desejos'} da wishlist? Não é possível desfazer.`,{ok:'Apagar',danger:true})) return;
+  await runWishBulk('A apagar', w=>DB.deleteWish(w.id));
+}
 
 // Atalhos para comparar preços: abrem a pesquisa de cada loja (pelo ISBN, se houver;
 // senão por título + autor). Nada é enviado a estas lojas a partir da app.
@@ -2642,13 +2879,20 @@ async function doLogin(e){
   // modo offline / demonstração (file://): entra com perfil local
   await enterApp('Visitante');
 }
+// Avisos do ecrã de entrada: no próprio ecrã (o toast fica por baixo dele).
+function loginNote(msg){ const n=$('login-note'); if(n){ n.textContent=msg; n.hidden=false; } else showToast(msg); }
 async function startGoogleLogin(){
   try{
     const r=await fetch(`${PB_URL}/api/collections/users/auth-methods`);
     const m=await r.json();
     const providers=m.authProviders||(m.oauth2&&m.oauth2.providers)||[];
     const google=providers.find(p=>p.name==='google');
-    if(!google){ showToast('Google OAuth não está configurado na PocketBase'); return; }
+    if(!google){
+      loginNote(DEMO_OK
+        ? 'O login com Google ainda não está configurado neste PocketBase de teste. Para entrar com os teus dados, restaura a cópia da produção (passo 4 de docs/testar-localmente.md). Para ver só o visual, para o PocketBase de teste e recarrega: a app abre em modo de demonstração.'
+        : 'O login com Google não está configurado neste servidor. Fala com quem gere esta estante.');
+      return;
+    }
     sessionStorage.setItem(AUTH.STATE_KEY,google.state);
     sessionStorage.setItem(AUTH.VERIFIER_KEY,google.codeVerifier);
     // Redirect full-page: o Google devolve o utilizador à raiz da SPA com ?code=.
@@ -2656,7 +2900,7 @@ async function startGoogleLogin(){
     const REDIRECT=location.origin+'/';   // produção: o teu domínio · teste local: http://localhost:8080/
     const base=(google.authURL||google.authUrl||'').replace(/redirect_uri=[^&]*/,'redirect_uri='+encodeURIComponent(REDIRECT));
     location.href=base;
-  }catch(err){ showToast('Erro a iniciar login: '+err.message); }
+  }catch(err){ loginNote('Não consegui começar o login ('+err.message+'). Tenta outra vez daqui a pouco.'); }
 }
 async function handleOAuthCallback(){
   const params=new URLSearchParams(location.search);
@@ -2664,7 +2908,7 @@ async function handleOAuthCallback(){
   if(!code||!state) return false;
   const savedState=sessionStorage.getItem(AUTH.STATE_KEY);
   const verifier=sessionStorage.getItem(AUTH.VERIFIER_KEY);
-  if(!savedState||state!==savedState){ showToast('Falha de validação no login'); return false; }
+  if(!savedState||state!==savedState){ loginNote('O login não foi concluído (validação falhou). Carrega outra vez em «Entrar com Google».'); return false; }
   // Troca o code pelo token via endpoint real do PocketBase 0.22.
   // redirectUrl DEVE coincidir com o que foi enviado ao Google em startGoogleLogin().
   const redirectUrl=location.origin+'/';
@@ -2683,7 +2927,7 @@ async function handleOAuthCallback(){
     AUTH.token=data.token; AUTH.user=data.record;
     history.replaceState({},'',location.pathname);
     return true;
-  }catch(err){ showToast('Erro no login Google: '+err.message); return false; }
+  }catch(err){ loginNote('Erro no login com Google: '+err.message+'. Tenta outra vez.'); return false; }
 }
 // ── Sessão: confirma e renova o token no PocketBase ───────────────────────
 // Um token expirado não dá erro nas listas (o PocketBase devolve-as vazias),
@@ -2723,7 +2967,13 @@ function startSessionKeeper(){
   });
 }
 
-function logout(){
+async function logout(){
+  // Alterações feitas sem rede ainda por enviar: ficam guardadas para esta
+  // conta (e são enviadas quando voltares a entrar com ela); a cópia de
+  // leitura é apagada para não ficar neste computador.
+  const n=pendingCount();
+  if(n&&!await askConfirm(`Tens ${n===1?'1 alteração feita sem rede':n+' alterações feitas sem rede'} por enviar. Ficam guardadas neste computador e são enviadas quando voltares a entrar com esta conta. Terminar a sessão?`,{ok:'Terminar sessão'})) return;
+  clearOfflineCache();
   AUTH.clear();
   if(AUTH_REQUIRED){ location.reload(); return; }
   showLoginScreen();

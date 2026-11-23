@@ -1,0 +1,24 @@
+name: Validar
+
+# Corre em cada PR e em cada push para o main: sintaxe, regras da CSP,
+# ficheiros em falta, chaves de API e os casos do script das páginas.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validar:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/validate.js

@@ -1,5 +1,5 @@
 # Nginx — serve o frontend de "MyShelf"
-# Frontend baked-in: rebuild necessário após editar index.html / styles.css / app.js
+# Frontend baked-in: rebuild necessário após editar index.html / app.js
 FROM nginx:1.27-alpine
 
 # Remover configuração default

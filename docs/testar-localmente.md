@@ -8,21 +8,30 @@ Com o `self-hosted/docker-compose.local.yml` corres o MyShelf no teu computador,
 
 ## 1. Arrancar
 
-Na pasta `self-hosted/`:
+**No Windows**, o mais simples é o script. Abre o PowerShell na pasta `self-hosted/` e corre:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\scripts\local.ps1 iniciar
+```
+
+A primeira linha só vale para essa janela e não muda nada no sistema. O script constrói as imagens, arranca os serviços, espera que a app responda e abre o browser. Outras ações: `estado`, `registos`, `parar` e `apagar-dados` (pede para escreveres APAGAR).
+
+**Noutros sistemas**, na pasta `self-hosted/`:
 
 ```bash
 docker compose -f docker-compose.local.yml up -d --build
 ```
 
-**No Windows**, algumas versões do Docker Desktop falham no `--build` com um erro sobre o *bake* («additional privileges requested»). Nesse caso, constrói as imagens à mão e arranca sem `--build`:
+Se o Docker Desktop falhar no `--build` com um erro sobre o *bake* («additional privileges requested»), constrói as imagens à mão e arranca com `--no-build`:
 
 ```powershell
 docker build -t myshelf-local-pocketbase ./pocketbase
 docker build -t myshelf-local-nginx -f nginx/Dockerfile .
-docker compose -f docker-compose.local.yml up -d
+docker compose -f docker-compose.local.yml up -d --no-build
 ```
 
-Confirma que os três serviços estão a correr: `docker compose -f docker-compose.local.yml ps`.
+Confirma que os três serviços estão a correr: `docker compose -f docker-compose.local.yml ps -a`.
 
 ## 2. Criar o administrador do painel
 
@@ -63,3 +72,5 @@ A pesquisa no Google Books só funciona se definires a chave antes de arrancar (
 docker compose -f docker-compose.local.yml down      # para, mantém os dados de teste
 docker compose -f docker-compose.local.yml down -v   # para e apaga os dados de teste
 ```
+
+No Windows: `.\scripts\local.ps1 parar` ou `.\scripts\local.ps1 apagar-dados`.

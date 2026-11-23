@@ -59,3 +59,6 @@ npm-debug.log*
 # Usa docker-compose.override.yml para ajustes locais.
 # ─────────────────────────────────────────────────────────
 docker-compose.override.yml
+
+# Relatórios do scripts/backfill-pages.mjs (têm títulos de livros)
+relatorio-paginas-*.csv

@@ -1424,6 +1424,37 @@ textarea:focus-visible,
 /* ── Aviso de sessão terminada no ecrã de entrada ── */
 .login-note{margin:0 0 16px;padding:10px 14px;border-radius:10px;background:rgba(163,80,31,.1);border-left:4px solid var(--orange-mid);color:var(--text);font-weight:600;font-size:.944rem;text-align:left}
 .login-note[hidden]{display:none}
+
+/* ── Wishlist: selecionar vários ── */
+.wish-head-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.wish-bulk-toggle{margin-left:0}
+.wish-pick{cursor:pointer;position:relative;padding-top:18px;user-select:none;-webkit-user-select:none}
+.wish-pick .wish-check{position:absolute;top:10px;right:10px;width:24px;height:24px;margin:0;accent-color:var(--green-mid);cursor:pointer}
+.wish-pick.is-selected{outline:3px solid var(--green-mid);outline-offset:3px}
+.wish-pick:focus-within{outline:3px solid var(--green-mid);outline-offset:3px}
+#wish-bulk-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:12px 14px;border-radius:var(--radius);background:var(--surface);border:1.5px solid var(--border);box-shadow:var(--shadow)}
+
+/* Barra de ações da seleção acima do rodapé de madeira (telemóvel/tablet) e
+   numa só linha que desliza, para não tapar as notas. */
+body:not(.nav-top) .bulk-bar{bottom:84px}
+@media(max-width:899px){
+  #wish-bulk-bar{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:10px 12px;gap:8px}
+  #wish-bulk-bar > *{flex:none}
+}
+:root[data-ambiente="noturna"] .bulk-bar button.danger:not(:hover){color:#f4a093;border-color:#f4a093}
+
+/* ── Separar título e autor ── */
+.split-intro{font-size:.944rem;color:var(--text2);margin:0 0 10px;line-height:1.5}
+.split-progress{font-weight:700;margin:6px 0 12px}
+.split-list{display:flex;flex-direction:column;gap:8px;max-height:52vh;overflow:auto;margin:0 0 14px;padding-right:4px}
+.split-item{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1.5px solid var(--border);border-radius:var(--radius);background:var(--surface);cursor:pointer}
+.split-item input{width:22px;height:22px;flex:none;margin-top:2px;accent-color:var(--green-mid)}
+.split-item > span{display:flex;flex-direction:column;gap:3px;min-width:0}
+.split-before{color:var(--text3);text-decoration:line-through;font-size:.889rem}
+.split-after{color:var(--text);font-weight:700}
+.split-after em,.split-before em{font-style:normal;font-weight:500}
+.split-note{font-size:.833rem;color:var(--text2)}
+.split-src{font-size:.778rem;color:var(--text3)}
 </style>
 </head>
 <body>

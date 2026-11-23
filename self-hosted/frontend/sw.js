@@ -32,10 +32,14 @@ self.addEventListener('fetch', e => {
     // mesmo que o Cloudflare tenha dito ao browser para guardar o ficheiro 4 h.
     fetch(req, { cache: 'no-cache' })
       .then(res => {
-        const copy = res.clone();
-        caches.open(CACHE_NAME).then(c => c.put(req, copy));
+        if (res.ok) { const copy = res.clone(); caches.open(CACHE_NAME).then(c => c.put(req, copy)); }  // não guarda 404/500
         return res;
       })
-      .catch(() => caches.match(req).then(cached => cached || caches.match('index.html')))
+      // Sem rede: a cópia exata; senão a mesma página sem o «?v=…» (o app.js
+      // muda de endereço a cada versão); a página inicial só para navegações —
+      // nunca HTML no lugar de um script.
+      .catch(() => caches.match(req)
+        .then(c => c || caches.match(req, { ignoreSearch: true }))
+        .then(c => c || (req.mode === 'navigate' ? caches.match('index.html') : Response.error())))
   );
 });
